@@ -571,12 +571,11 @@ export default function InterconnectionPage() {
                 SPP queue proximity
               </p>
               <h1 className="mt-2 text-3xl font-semibold text-[#172026] md:text-4xl">
-                Caldwell parcel interconnection congestion view
+                Parcel 700011666 interconnection congestion view
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-[#48525a]">
-                The parcel is plotted against decoded generation queue points from all four PowerBI report pages.
-                No same-substation or feeder-level match is visible in the source report; the nearest active visible SPP queue
-                project is {interconnectionData.stats.nearestActiveMiles} miles away.
+                The default KML parcel is plotted against decoded generation queue points from all four PowerBI report pages.
+                The nearest active visible SPP queue project is {interconnectionData.stats.nearestActiveMiles} miles away.
               </p>
             </div>
             <a
@@ -658,7 +657,7 @@ export default function InterconnectionPage() {
               </div>
               <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
                 Queue-stage concentration within 300 miles is mostly DISIS clusters, especially DISIS-2024-001.
-                The parcel itself has no visible same-POI match in the source map.
+                The parcel itself can be replaced with a coordinate or uploaded KML/KMZ, which updates the active parcel marker.
               </div>
             </div>
           ) : (
@@ -676,7 +675,7 @@ export default function InterconnectionPage() {
         <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
           <div className="border-b border-[#e5ded2] p-4">
             <h2 className="text-lg font-semibold">Nearby Active Queue Projects</h2>
-            <p className="text-xs text-[#66727a]">Sorted by distance from the parcel center. Radius is 300 miles because no same-feeder/substation area was visible.</p>
+            <p className="text-xs text-[#66727a]">Sorted by distance from the active parcel center. Radius is 300 miles.</p>
             <p className="mt-1 text-xs text-[#66727a]">
               SC MVA and SCR are point-of-interconnection grid-strength metrics from SPP study workbooks where available; they are not transformer thermal ratings.
             </p>
