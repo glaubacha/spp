@@ -171,7 +171,9 @@ function formatKv(value: string | number | boolean | null | undefined): string {
 
 function formatMva(value: string | number | boolean | null | undefined): string {
   if (value === undefined || value === null || value === "") return "Not available in source";
-  const numeric = Number(String(value).replace(/[^\d.-]/g, ""));
+  const cleaned = String(value).replace(/[^\d.-]/g, "");
+  if (!cleaned) return "Not available in source";
+  const numeric = Number(cleaned);
   if (!Number.isFinite(numeric)) return String(value);
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)} MVA`;
 }
@@ -1112,7 +1114,7 @@ function SatelliteInfrastructureMap({
         </label>
         <label className="flex min-w-[11rem] items-center justify-between gap-3 rounded-md border border-[#cfc5b6] bg-white px-3 py-2">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
-            Heat map
+            Generation heat map
           </span>
           <button
             aria-pressed={heatmapEnabled}
