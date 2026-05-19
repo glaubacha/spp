@@ -8,6 +8,7 @@ import { substationMvaRatings, type SubstationMvaRating } from "@/data/substatio
 
 type Project = (typeof interconnectionData.activeProjects)[number];
 type MapMode = "active" | "nearby";
+type QueueYear = "all" | string;
 type GeoJsonFeatureCollection = {
   type: "FeatureCollection";
   features: Array<{
@@ -112,9 +113,22 @@ function stageColor(stage: string) {
   return stageColors[index];
 }
 
-function mapDataFor(mode: MapMode, selectedId: string): GeoJsonFeatureCollection {
-  const projectSet = mode === "nearby" ? interconnectionData.nearbyActive : interconnectionData.activeProjects;
+function projectYear(project: Project): string {
+  return project.commercialOperationDate?.slice(0, 4) ?? "Pending";
+}
 
+function projectsFor(mode: MapMode, selectedYear: QueueYear): readonly Project[] {
+  const projectSet = mode === "nearby" ? interconnectionData.nearbyActive : interconnectionData.activeProjects;
+  if (selectedYear === "all") return projectSet;
+  return projectSet.filter((project) => projectYear(project) === selectedYear);
+}
+
+function yearsFor(mode: MapMode): string[] {
+  return Array.from(new Set(projectsFor(mode, "all").map(projectYear))).sort();
+}
+
+function mapDataFor(mode: MapMode, selectedId: string, selectedYear: QueueYear): GeoJsonFeatureCollection {
+  const projectSet = projectsFor(mode, selectedYear);
   return {
     type: "FeatureCollection",
     features: projectSet.map((project) => ({
@@ -554,17 +568,32 @@ function infrastructurePopupHtml(
 
 export default function InterconnectionPage() {
   const [mode, setMode] = useState<MapMode>("active");
+  const [selectedYear, setSelectedYear] = useState<QueueYear>("all");
   const [selectedId, setSelectedId] = useState<string>(interconnectionData.nearbyActive[0]?.id ?? "");
-  const nearbyActiveMw = interconnectionData.nearbyActive.reduce((sum, project) => sum + project.capacityMw, 0);
+  const yearOptions = useMemo(() => yearsFor(mode), [mode]);
+  const visibleProjects = useMemo(() => projectsFor(mode, selectedYear), [mode, selectedYear]);
+  const visibleNearbyProjects = useMemo(() => projectsFor("nearby", selectedYear), [selectedYear]);
+  const nearbyActiveMw = visibleNearbyProjects.reduce((sum, project) => sum + project.capacityMw, 0);
 
   const selected = useMemo(
     () =>
-      interconnectionData.activeProjects.find((project) => project.id === selectedId) ??
+      visibleProjects.find((project) => project.id === selectedId) ??
+      visibleProjects[0] ??
       interconnectionData.nearbyActive[0],
-    [selectedId],
+    [selectedId, visibleProjects],
   );
   const selectedMva = selected ? lookupSubstationMva(selected.poi) : undefined;
   const selectedGridMetric = selected ? sppStudyGridMetrics[selected.id] : undefined;
+
+  useEffect(() => {
+    if (selectedYear !== "all" && !yearOptions.includes(selectedYear)) setSelectedYear("all");
+  }, [selectedYear, yearOptions]);
+
+  useEffect(() => {
+    if (visibleProjects.length > 0 && !visibleProjects.some((project) => project.id === selectedId)) {
+      setSelectedId(visibleProjects[0].id);
+    }
+  }, [selectedId, visibleProjects]);
 
   return (
     <main className="min-h-screen bg-[#f7f5ef] text-[#172026]">
@@ -599,8 +628,8 @@ export default function InterconnectionPage() {
         <Metric label="Active queue" value={interconnectionData.stats.activeQueueCount.toString()} detail={`${formatMw(interconnectionData.stats.activeQueueMw)} MW`} />
         <Metric
           label="Nearby active"
-          value={`${interconnectionData.stats.nearbyActiveCount300mi} (${formatMw(nearbyActiveMw)} MW)`}
-          detail="within 300 miles"
+          value={`${visibleNearbyProjects.length} (${formatMw(nearbyActiveMw)} MW)`}
+          detail={selectedYear === "all" ? "within 300 miles" : `${selectedYear} within 300 miles`}
         />
         <Metric label="Nearest active" value={`${interconnectionData.stats.nearestActiveMiles} mi`} detail={interconnectionData.nearbyActive[0]?.id ?? "None"} />
         <Metric label="Decoded rows" value={interconnectionData.stats.totalDecodedProjects.toString()} detail="PowerBI queue projects" />
@@ -615,26 +644,48 @@ export default function InterconnectionPage() {
                 Satellite imagery with OpenInfraMap power lines, substations, plants, the parcel, and SPP queue projects.
               </p>
             </div>
-            <div className="inline-flex rounded-md border border-[#cfc5b6] bg-[#f7f2e9] p-1">
-              <button
-                className={`rounded px-3 py-1.5 text-xs font-semibold ${mode === "active" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
-                onClick={() => setMode("active")}
-                type="button"
-              >
-                Active SPP Queue
-              </button>
-              <button
-                className={`rounded px-3 py-1.5 text-xs font-semibold ${mode === "nearby" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
-                onClick={() => setMode("nearby")}
-                type="button"
-              >
-                Nearby
-              </button>
+            <div className="flex flex-col gap-2 md:items-end">
+              <div className="inline-flex rounded-md border border-[#cfc5b6] bg-[#f7f2e9] p-1">
+                <button
+                  className={`rounded px-3 py-1.5 text-xs font-semibold ${mode === "active" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
+                  onClick={() => setMode("active")}
+                  type="button"
+                >
+                  Active SPP Queue
+                </button>
+                <button
+                  className={`rounded px-3 py-1.5 text-xs font-semibold ${mode === "nearby" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
+                  onClick={() => setMode("nearby")}
+                  type="button"
+                >
+                  Nearby
+                </button>
+              </div>
+              <div className="flex max-w-full flex-wrap justify-end gap-1 rounded-md border border-[#cfc5b6] bg-[#f7f2e9] p-1">
+                <button
+                  className={`rounded px-2.5 py-1.5 text-xs font-semibold ${selectedYear === "all" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
+                  onClick={() => setSelectedYear("all")}
+                  type="button"
+                >
+                  All
+                </button>
+                {yearOptions.map((year) => (
+                  <button
+                    className={`rounded px-2.5 py-1.5 text-xs font-semibold ${selectedYear === year ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
+                    key={year}
+                    onClick={() => setSelectedYear(year)}
+                    type="button"
+                  >
+                    {year}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           <SatelliteInfrastructureMap
             mode={mode}
+            selectedYear={selectedYear}
             selectedId={selected?.id ?? ""}
             setSelectedId={setSelectedId}
           />
@@ -704,7 +755,7 @@ export default function InterconnectionPage() {
                 </tr>
               </thead>
               <tbody>
-                {interconnectionData.nearbyActive.map((project) => (
+                {visibleNearbyProjects.map((project) => (
                   <NearbyProjectRow key={project.id} project={project} />
                 ))}
               </tbody>
@@ -769,10 +820,12 @@ function NearbyProjectRow({ project }: { project: Project }) {
 
 function SatelliteInfrastructureMap({
   mode,
+  selectedYear,
   selectedId,
   setSelectedId,
 }: {
   mode: MapMode;
+  selectedYear: QueueYear;
   selectedId: string;
   setSelectedId: (value: string) => void;
 }) {
@@ -786,10 +839,10 @@ function SatelliteInfrastructureMap({
   const hifldCacheRef = useRef<Map<string, Record<string, string | number | null> | undefined>>(new Map());
   const hoverKeyRef = useRef("");
   const visibleTypeColors = useMemo(() => {
-    const projects = mode === "nearby" ? interconnectionData.nearbyActive : interconnectionData.activeProjects;
+    const projects = projectsFor(mode, selectedYear);
     const visibleTypes = new Set<string>(projects.map((project) => project.generationType));
     return Object.entries(typeColors).filter(([type]) => visibleTypes.has(type));
-  }, [mode]);
+  }, [mode, selectedYear]);
 
   const applyLocatorData = (data: LocatorFeatureCollection, message: string) => {
     mapRef.current?.getSource("parcel")?.setData?.(parcelPolygonData(data));
@@ -821,8 +874,8 @@ function SatelliteInfrastructureMap({
   useEffect(() => {
     selectedIdRef.current = selectedId;
     const source = mapRef.current?.getSource("queue-projects");
-    source?.setData?.(mapDataFor(mode, selectedId));
-  }, [mode, selectedId]);
+    source?.setData?.(mapDataFor(mode, selectedId, selectedYear));
+  }, [mode, selectedId, selectedYear]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1053,7 +1106,7 @@ function SatelliteInfrastructureMap({
 
         map.addSource("queue-projects", {
           type: "geojson",
-          data: mapDataFor(mode, selectedIdRef.current),
+          data: mapDataFor(mode, selectedIdRef.current, selectedYear),
         });
         map.addLayer({
           id: "queue-project-hit-area",
