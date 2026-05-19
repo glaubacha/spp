@@ -56,6 +56,10 @@ type MapLibreMap = {
   getSource: (id: string) => { setData?: (data: GeoJsonFeatureCollection | LocatorFeatureCollection) => void } | undefined;
   isStyleLoaded: () => boolean;
   on: (event: string, layerOrHandler: string | ((event?: MapLibreEvent) => void), handler?: (event: MapLibreEvent) => void) => void;
+  queryRenderedFeatures: (
+    pointOrBox: unknown,
+    options?: { layers?: string[] },
+  ) => Array<{ layer?: { id?: string }; properties?: Record<string, string | number | boolean | null> }>;
   once: (event: string, handler: () => void) => void;
   remove: () => void;
   setLayoutProperty: (layerId: string, name: string, value: unknown) => void;
@@ -67,6 +71,7 @@ type MapLibreEvent = {
     properties?: Record<string, string | number | boolean | null>;
   }>;
   lngLat: { lat: number; lng: number };
+  point?: { x: number; y: number };
 };
 
 type MapLibrePopup = {
@@ -1051,6 +1056,16 @@ function SatelliteInfrastructureMap({
           data: mapDataFor(mode, selectedIdRef.current),
         });
         map.addLayer({
+          id: "queue-project-hit-area",
+          type: "circle",
+          source: "queue-projects",
+          paint: {
+            "circle-color": "rgba(255,255,255,0.01)",
+            "circle-opacity": 0.01,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 14, 7, 18, 11, 24],
+          },
+        });
+        map.addLayer({
           id: "queue-projects",
           type: "circle",
           source: "queue-projects",
@@ -1067,7 +1082,7 @@ function SatelliteInfrastructureMap({
               12,
             ],
             "circle-stroke-color": "#ffffff",
-            "circle-stroke-width": 1.2,
+            "circle-stroke-width": 2,
           },
         });
         map.addLayer({
@@ -1118,6 +1133,19 @@ function SatelliteInfrastructureMap({
         for (const layer of infrastructureLayers) {
           map.on("mousemove", layer, (event) => {
             if (!map || !event.features?.[0]) return;
+            if (event.point) {
+              const nearQueueProject = map.queryRenderedFeatures(
+                [
+                  [event.point.x - 12, event.point.y - 12],
+                  [event.point.x + 12, event.point.y + 12],
+                ],
+                { layers: ["queue-project-hit-area", "queue-projects"] },
+              );
+              if (nearQueueProject.length > 0) {
+                hoverPopup.remove();
+                return;
+              }
+            }
             map.getCanvas().style.cursor = "help";
             const kind = event.features[0].layer?.id?.includes("line") ? "line" : "substation";
             const key = `${kind}:${event.lngLat.lng.toFixed(4)},${event.lngLat.lat.toFixed(4)}`;
