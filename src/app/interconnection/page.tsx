@@ -507,7 +507,7 @@ function infrastructurePopupHtml(
   const title = isLine
     ? firstInfrastructureValue(properties, ["name", "ref", "operator"])
     : firstInfrastructureValue(properties, ["name", "ref", "operator", "substation"]);
-  const featureType = isLine ? "Power line" : layerId.includes("plant") ? "Power plant" : "Substation / grid asset";
+  const featureType = isLine ? "Power line" : layerId.includes("plant") ? "Power plant" : "Substation";
   const hifldVoltage = isLine
     ? hifld?.VOLTAGE
     : hifld?.MAX_VOLT
@@ -1230,6 +1230,23 @@ function SatelliteInfrastructureMap({
             <span>{type}</span>
           </div>
         ))}
+        <div className="mb-1 mt-3 font-semibold">Map Assets</div>
+        <div className="flex items-center gap-2">
+          <span className="h-0.5 w-5 rounded-full bg-[#00e5ff]" />
+          <span>Power line</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-sm border border-black bg-[#ffcc00]" />
+          <span>Substation</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-sm border border-[#ffd166] bg-[#ff7a00]" />
+          <span>Power plant / generator</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full border-2 border-white bg-[#b71c1c]" />
+          <span>Parcel</span>
+        </div>
       </div>
     </div>
     </div>
