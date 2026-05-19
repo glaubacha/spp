@@ -187,11 +187,14 @@ function formatKv(value: string | number | boolean | null | undefined): string {
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
-      const numeric = Number(part.replace(/[^\d.-]/g, ""));
-      if (!Number.isFinite(numeric)) return part;
+      const cleaned = part.replace(/[^\d.-]/g, "");
+      if (!cleaned) return undefined;
+      const numeric = Number(cleaned);
+      if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
       const kv = numeric > 1000 ? numeric / 1000 : numeric;
       return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(kv)} kV`;
-    });
+    })
+    .filter((part): part is string => Boolean(part));
 
   return values.length > 0 ? values.join(" / ") : "Not available in source";
 }
