@@ -91,6 +91,11 @@ function formatMw(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
 }
 
+function formatPoiVoltage(value: string | number | boolean | null | undefined): string {
+  if (value === undefined || value === null || value === "" || Number(value) <= 0) return "Not listed";
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(Number(value))} kV`;
+}
+
 function projectColor(project: Project) {
   return typeColors[project.generationType] ?? typeColors.Unknown;
 }
@@ -121,6 +126,7 @@ function mapDataFor(mode: MapMode, selectedId: string): GeoJsonFeatureCollection
         generationType: project.generationType,
         nearby: project.distanceMiles <= 300,
         poi: project.poi,
+        poiVoltageKv: project.poiVoltageKv ?? 0,
         queueStage: project.queueStage,
         selected: project.id === selectedId,
         status: project.status,
@@ -776,6 +782,11 @@ function SatelliteInfrastructureMap({
   const selectedIdRef = useRef(selectedId);
   const hifldCacheRef = useRef<Map<string, Record<string, string | number | null> | undefined>>(new Map());
   const hoverKeyRef = useRef("");
+  const visibleTypeColors = useMemo(() => {
+    const projects = mode === "nearby" ? interconnectionData.nearbyActive : interconnectionData.activeProjects;
+    const visibleTypes = new Set<string>(projects.map((project) => project.generationType));
+    return Object.entries(typeColors).filter(([type]) => visibleTypes.has(type));
+  }, [mode]);
 
   const applyLocatorData = (data: LocatorFeatureCollection, message: string) => {
     mapRef.current?.getSource("parcel")?.setData?.(parcelPolygonData(data));
@@ -1081,10 +1092,12 @@ function SatelliteInfrastructureMap({
           setSelectedId(projectId);
           popupRef.current?.remove();
           const props = event.features?.[0]?.properties ?? {};
+          const mw = Number(props.capacityMw);
+          const capacityLabel = Number.isFinite(mw) && mw > 0 ? `${formatMw(mw)} MW` : "MW not listed";
           popupRef.current = new window.maplibregl.Popup({ closeButton: false, offset: 12 })
             .setLngLat(event.lngLat)
             .setHTML(
-              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(props.capacityMw)} MW<br>${escapeHtml(props.queueStage)}<br>${escapeHtml(props.distanceMiles)} mi from parcel`,
+              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>${escapeHtml(props.queueStage)}<br>${escapeHtml(props.distanceMiles)} mi from parcel`,
             )
             .addTo(map);
         });
@@ -1213,7 +1226,7 @@ function SatelliteInfrastructureMap({
       <div className="h-[34rem] w-full overflow-hidden rounded-md" ref={containerRef} />
       <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-[17rem] rounded-md border border-white/20 bg-black/65 p-3 text-xs leading-5 text-white shadow-lg">
         <div className="mb-1 font-semibold">Generation Type</div>
-        {Object.entries(typeColors).map(([type, color]) => (
+        {visibleTypeColors.map(([type, color]) => (
           <div className="flex items-center gap-2" key={type}>
             <span className="h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: color }} />
             <span>{type}</span>
