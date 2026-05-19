@@ -516,9 +516,6 @@ function infrastructurePopupHtml(
     hifld?.ID,
   );
   const mva = mvaRatingValue(properties, documentedMva);
-  const sourceNote = hifld
-    ? "Sources checked: OpenInfraMap/OpenStreetMap, HIFLD public FeatureServer, public SIS/FERC/OASIS/planning records, and calculated three-phase MVA when voltage and current tags exist."
-    : "Sources checked: OpenInfraMap/OpenStreetMap, public SIS/FERC/OASIS/planning records, and calculated three-phase MVA when voltage and current tags exist. Hover pause checks HIFLD public FeatureServer when available.";
   const rows = [
     ["Feature", featureType],
     ["Name", isSubstation && hifld?.NAME ? hifld.NAME : title],
@@ -542,7 +539,6 @@ function infrastructurePopupHtml(
             `<div style="display:grid;grid-template-columns:88px 1fr;gap:8px"><span style="color:#64748b">${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`,
         )
         .join("")}
-      <div style="border-top:1px solid #e5e7eb;color:#64748b;margin-top:7px;padding-top:6px">${escapeHtml(sourceNote)}</div>
     </div>
   `;
 }
