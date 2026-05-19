@@ -529,11 +529,9 @@ function infrastructurePopupHtml(
     ["Built", formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]))],
     ["Last upgraded", "Not available in checked public sources"],
     ["MVA rating", mva.label],
-    ["MVA source", mva.source],
     ["Rating type", mva.type],
     ["Operator", hifld?.OWNER ?? firstInfrastructureValue(properties, ["operator", "owner"])],
     ["Status", hifld?.STATUS ?? firstInfrastructureValue(properties, ["status"])],
-    ["HIFLD source date", formatPublicDate(hifld?.SOURCEDATE)],
   ];
 
   return `
