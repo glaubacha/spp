@@ -772,7 +772,6 @@ function SatelliteInfrastructureMap({
   setSelectedId: (value: string) => void;
 }) {
   const [coordinateInput, setCoordinateInput] = useState("");
-  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
   const [locatorMessage, setLocatorMessage] = useState("Enter coordinates or upload KML/KMZ to make it the active parcel.");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -814,12 +813,6 @@ function SatelliteInfrastructureMap({
     const source = mapRef.current?.getSource("queue-projects");
     source?.setData?.(mapDataFor(mode, selectedId));
   }, [mode, selectedId]);
-
-  useEffect(() => {
-    if (mapRef.current?.getLayer("queue-heatmap")) {
-      mapRef.current.setLayoutProperty("queue-heatmap", "visibility", heatmapEnabled ? "visible" : "none");
-    }
-  }, [heatmapEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1053,47 +1046,6 @@ function SatelliteInfrastructureMap({
           data: mapDataFor(mode, selectedIdRef.current),
         });
         map.addLayer({
-          id: "queue-heatmap",
-          type: "heatmap",
-          source: "queue-projects",
-          layout: { visibility: heatmapEnabled ? "visible" : "none" },
-          paint: {
-            "heatmap-color": [
-              "interpolate",
-              ["linear"],
-              ["heatmap-density"],
-              0,
-              "rgba(33, 102, 172, 0)",
-              0.2,
-              "#56b1f7",
-              0.42,
-              "#5ad45a",
-              0.62,
-              "#f6d74b",
-              0.82,
-              "#f97316",
-              1,
-              "#b91c1c",
-            ],
-            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 3, 0.75, 8, 1.7, 12, 2.4],
-            "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 4, 0.76, 11, 0.48],
-            "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 3, 14, 7, 30, 12, 54],
-            "heatmap-weight": [
-              "interpolate",
-              ["linear"],
-              ["to-number", ["get", "capacityMw"]],
-              0,
-              0,
-              250,
-              0.35,
-              800,
-              0.72,
-              1500,
-              1,
-            ],
-          },
-        });
-        map.addLayer({
           id: "queue-projects",
           type: "circle",
           source: "queue-projects",
@@ -1225,7 +1177,7 @@ function SatelliteInfrastructureMap({
 
   return (
     <div>
-      <div className="grid gap-3 border-b border-[#e5ded2] bg-[#fbf8f1] p-4 lg:grid-cols-[1fr_auto_1fr_auto] lg:items-end">
+      <div className="grid gap-3 border-b border-[#e5ded2] bg-[#fbf8f1] p-4 lg:grid-cols-[1fr_auto_1fr] lg:items-end">
         <label className="block">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
             Coordinates
@@ -1259,25 +1211,7 @@ function SatelliteInfrastructureMap({
             type="file"
           />
         </label>
-        <label className="flex min-w-[11rem] items-center justify-between gap-3 rounded-md border border-[#cfc5b6] bg-white px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
-            Generation heat map
-          </span>
-          <button
-            aria-pressed={heatmapEnabled}
-            className={`relative h-7 w-12 rounded-full transition ${heatmapEnabled ? "bg-[#2f4858]" : "bg-[#cfc5b6]"}`}
-            onClick={() => setHeatmapEnabled((enabled) => !enabled)}
-            type="button"
-          >
-            <span className="sr-only">Toggle generation congestion heat map</span>
-            <span
-              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
-                heatmapEnabled ? "left-6" : "left-1"
-              }`}
-            />
-          </button>
-        </label>
-        <p className="text-xs leading-5 text-[#66727a] lg:col-span-4">{locatorMessage}</p>
+        <p className="text-xs leading-5 text-[#66727a] lg:col-span-3">{locatorMessage}</p>
       </div>
       <div className="relative bg-[#111827] p-3">
       <div className="h-[34rem] w-full overflow-hidden rounded-md" ref={containerRef} />
