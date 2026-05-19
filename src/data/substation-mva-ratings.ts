@@ -71,6 +71,36 @@ export const substationMvaRatings: SubstationMvaRating[] = [
     sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
   },
   {
+    aliases: ["crockett grimes", "crockett - grimes", "crockett to grimes"],
+    mvaLabel: "1,085 MVA",
+    name: "Crockett - Grimes 345 kV",
+    ratingType: "Transmission tie-line rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Crockett - Grimes, ownership AEP/Entergy, voltage 345 kV, rating 1,085 MVA. This is only matched to Crockett-Grimes, not to unrelated Crockett/Rocky Creek assets.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
+    aliases: ["southwest shreveport dolet hills", "southwest shreveport - dolet hills"],
+    mvaLabel: "1,059 MVA",
+    name: "Southwest Shreveport - Dolet Hills 345 kV",
+    ratingType: "Transmission tie-line rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Southwest Shreveport - Dolet Hills, ownership AEP, voltage 345 kV, rating 1,059 MVA.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
+    aliases: ["lieberman", "lieberman power station"],
+    mvaLabel: "368 MVA",
+    name: "Lieberman Power Station / 138 kV POI",
+    ratingType: "AEP receipt point rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Lieberman Power Station, ownership AEP, voltage 138 kV, rating 368 MVA.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
     aliases: ["lake hawkins", "lake hawkins 345", "lake hawkins 345 kv", "perdue"],
     mvaLabel: "675/675 MVA",
     name: "Lake Hawkins / Perdue 345/138 kV",

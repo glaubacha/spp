@@ -179,6 +179,49 @@ function formatMva(value: string | number | boolean | null | undefined): string 
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)} MVA`;
 }
 
+function firstNumericValue(
+  properties: Record<string, string | number | boolean | null> | undefined,
+  keys: string[],
+): { key: string; value: number } | undefined {
+  if (!properties) return undefined;
+
+  for (const key of keys) {
+    const raw = properties[key];
+    if (raw === undefined || raw === null || raw === "") continue;
+    const numeric = Number(String(raw).split(/[;,/|]+/)[0]?.replace(/[^\d.-]/g, ""));
+    if (Number.isFinite(numeric) && numeric > 0) return { key, value: numeric };
+  }
+
+  return undefined;
+}
+
+function calculatedThreePhaseMva(
+  properties: Record<string, string | number | boolean | null> | undefined,
+): { label: string; source: string; type: string } | undefined {
+  const voltage = firstNumericValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]);
+  const current = firstNumericValue(properties, [
+    "rating:amps",
+    "rating:amp",
+    "rating:current",
+    "ampacity",
+    "current",
+    "max_current",
+    "current:rating",
+    "current:thermal",
+  ]);
+  if (!voltage || !current) return undefined;
+
+  const kv = voltage.value > 1000 ? voltage.value / 1000 : voltage.value;
+  const mva = (Math.sqrt(3) * kv * current.value) / 1000;
+  if (!Number.isFinite(mva) || mva <= 0) return undefined;
+
+  return {
+    label: `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(mva)} MVA`,
+    source: `Calculated from mapped ${voltage.key} and ${current.key} tags`,
+    type: "Calculated three-phase apparent power",
+  };
+}
+
 function normalizeLookupText(value: string): string {
   return value
     .toLowerCase()
@@ -209,11 +252,32 @@ function lookupSubstationMva(...values: Array<string | number | boolean | null |
 function mvaRatingValue(
   properties: Record<string, string | number | boolean | null> | undefined,
   documentedRating?: SubstationMvaRating,
-): string {
-  if (documentedRating) return documentedRating.mvaLabel;
+): { label: string; source: string; type: string } {
+  if (documentedRating) {
+    return {
+      label: documentedRating.mvaLabel,
+      source: documentedRating.sourceTitle,
+      type: documentedRating.ratingType,
+    };
+  }
+
   const taggedRating = formatMva(firstInfrastructureValue(properties, ["rating:mva", "capacity:mva", "transformer:rating"]));
-  if (taggedRating !== "Not available in source") return taggedRating;
-  return "Not found in checked public sources";
+  if (taggedRating !== "Not available in source") {
+    return {
+      label: taggedRating,
+      source: "Mapped OpenInfraMap/OpenStreetMap MVA tag",
+      type: "Mapped equipment rating",
+    };
+  }
+
+  const calculated = calculatedThreePhaseMva(properties);
+  if (calculated) return calculated;
+
+  return {
+    label: "Not found in checked public sources",
+    source: "No matching SIS/FERC/OASIS/planning record or calculable voltage/current tags found",
+    type: "Not available",
+  };
 }
 
 function formatPublicDate(value: string | number | boolean | null | undefined): string {
@@ -450,18 +514,19 @@ function infrastructurePopupHtml(
     hifld?.NAME,
     hifld?.ID,
   );
+  const mva = mvaRatingValue(properties, documentedMva);
   const sourceNote = hifld
-    ? "Sources checked: OpenInfraMap/OpenStreetMap, HIFLD public FeatureServer, and the app's public planning-document MVA lookup."
-    : "Sources checked: OpenInfraMap/OpenStreetMap and the app's public planning-document MVA lookup. Hover pause checks HIFLD public FeatureServer when available.";
+    ? "Sources checked: OpenInfraMap/OpenStreetMap, HIFLD public FeatureServer, public SIS/FERC/OASIS/planning records, and calculated three-phase MVA when voltage and current tags exist."
+    : "Sources checked: OpenInfraMap/OpenStreetMap, public SIS/FERC/OASIS/planning records, and calculated three-phase MVA when voltage and current tags exist. Hover pause checks HIFLD public FeatureServer when available.";
   const rows = [
     ["Feature", featureType],
     ["Name", isSubstation && hifld?.NAME ? hifld.NAME : title],
     ["Voltage", formatKv(hifldVoltage ?? firstInfrastructureValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]))],
     ["Built", formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]))],
     ["Last upgraded", "Not available in checked public sources"],
-    ["MVA rating", mvaRatingValue(properties, documentedMva)],
-    ["MVA source", documentedMva ? documentedMva.sourceTitle : "No matching public planning-document rating found"],
-    ["Rating type", documentedMva ? documentedMva.ratingType : "Not available"],
+    ["MVA rating", mva.label],
+    ["MVA source", mva.source],
+    ["Rating type", mva.type],
     ["Operator", hifld?.OWNER ?? firstInfrastructureValue(properties, ["operator", "owner"])],
     ["Status", hifld?.STATUS ?? firstInfrastructureValue(properties, ["status"])],
     ["HIFLD source date", formatPublicDate(hifld?.SOURCEDATE)],
