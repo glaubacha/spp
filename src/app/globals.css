@@ -1,0 +1,201 @@
+@import "tailwindcss";
+
+:root {
+  --background: #08161a;
+  --foreground: #d7e5e7;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Aptos", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top right, #153c45 0%, #08161a 45%);
+  color: var(--foreground);
+  font-family: "Aptos", "Segoe UI", sans-serif;
+}
+
+.lead-table {
+  width: 100%;
+  table-layout: fixed;
+  font-size: 0.64rem;
+  line-height: 1.24;
+}
+
+.lead-table th,
+.lead-table td {
+  overflow-wrap: anywhere;
+  padding: 0.42rem 0.35rem;
+  vertical-align: top;
+}
+
+.lead-table th {
+  font-size: 0.62rem;
+  line-height: 1;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.lead-table :is(a, span, div, p, input, textarea, button) {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.lead-table :is(a, button, .rounded-full, .lead-size-badge) {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.lead-table th:nth-child(1) {
+  width: 8%;
+}
+
+.lead-table th:nth-child(2) {
+  width: 4%;
+}
+
+.lead-table th:nth-child(3) {
+  width: 5%;
+}
+
+.lead-table th:nth-child(4) {
+  width: 5%;
+}
+
+.lead-table th:nth-child(5) {
+  width: 5%;
+}
+
+.lead-table th:nth-child(6) {
+  width: 3%;
+}
+
+.lead-table th:nth-child(7) {
+  width: 6%;
+}
+
+.lead-table th:nth-child(8) {
+  width: 7%;
+}
+
+.lead-table th:nth-child(9) {
+  width: 6%;
+}
+
+.lead-table th:nth-child(10) {
+  width: 9%;
+}
+
+.lead-table th:nth-child(11) {
+  width: 7%;
+}
+
+.lead-table th:nth-child(12) {
+  width: 5%;
+}
+
+.lead-table th:nth-child(13) {
+  width: 4%;
+}
+
+.lead-table th:nth-child(14),
+.lead-table th:nth-child(15) {
+  width: 9%;
+}
+
+.lead-table th:nth-child(16) {
+  width: 8%;
+}
+
+.lead-table textarea {
+  min-height: 4.75rem;
+  padding: 0.45rem;
+}
+
+.lead-table input,
+.lead-table button {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.lead-table button {
+  padding: 0.42rem 0.5rem;
+}
+
+.lead-table .rounded-full {
+  letter-spacing: 0;
+  padding: 0.32rem 0.45rem;
+  text-transform: none;
+}
+
+.lead-summary-preview {
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  cursor: help;
+  margin: -0.28rem;
+  padding: 0.28rem;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.lead-summary-preview:focus {
+  outline: none;
+}
+
+.lead-summary-preview:hover,
+.lead-summary-preview:focus {
+  background: rgba(8, 21, 25, 0.96);
+  border-color: rgba(103, 232, 249, 0.28);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32);
+  position: relative;
+  z-index: 20;
+}
+
+.lead-summary-preview__text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.lead-summary-preview:hover .lead-summary-preview__text,
+.lead-summary-preview:focus .lead-summary-preview__text {
+  display: block;
+  max-height: 12rem;
+  overflow: auto;
+  -webkit-line-clamp: unset;
+}
+
+.lead-summary-preview__hint {
+  color: rgba(207, 250, 254, 0.42);
+  font-size: 0.56rem;
+  margin-top: 0.24rem;
+  white-space: nowrap;
+}
+
+.lead-summary-preview:hover .lead-summary-preview__hint,
+.lead-summary-preview:focus .lead-summary-preview__hint {
+  color: rgba(207, 250, 254, 0.72);
+}
+
+.lead-size-badge {
+  font-size: inherit;
+  font-weight: 500;
+  line-height: 1.1;
+  padding: 0.32rem 0.4rem;
+  white-space: nowrap;
+}
+
+.lead-actions {
+  min-width: 0;
+}

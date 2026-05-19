@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Caldwell County Bobwhite Project Area</name>
+    <description>
+      Approximate boundary polygon derived from the provided screenshot and public listing imagery for the Bobwhite project area near 1026 Bobwhite Rd, Lockhart, Caldwell County, Texas. Georeferenced using listed tract acreage of 93.4 acres and coordinate anchor near 29.926678, -97.748579. Use for planning/reference only.
+    </description>
+    <Style id="project-area-style">
+      <LineStyle>
+        <color>ff0000ff</color>
+        <width>3</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>330000ff</color>
+      </PolyStyle>
+    </Style>
+    <Placemark>
+      <name>Bobwhite Project Area - Approximate Boundary</name>
+      <description>Approximate boundary polygon traced from screenshot/project exhibit. Area target: approximately 93.4 acres.</description>
+      <styleUrl>#project-area-style</styleUrl>
+      <Polygon>
+        <tessellate>1</tessellate>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -97.7565756,29.9265706,0
+              -97.7415506,29.9290590,0
+              -97.7410982,29.9268433,0
+              -97.7542943,29.9242867,0
+              -97.7565756,29.9265706,0
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>
