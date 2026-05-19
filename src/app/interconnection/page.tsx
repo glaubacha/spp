@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { interconnectionData } from "@/data/interconnection-data";
+import { substationMvaRatings, type SubstationMvaRating } from "@/data/substation-mva-ratings";
 
 type Project = (typeof interconnectionData.activeProjects)[number];
 type MapMode = "active" | "nearby";
@@ -178,10 +179,35 @@ function formatMva(value: string | number | boolean | null | undefined): string 
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)} MVA`;
 }
 
-function mvaRatingValue(properties: Record<string, string | number | boolean | null> | undefined): string {
+function normalizeLookupText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\bkv\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lookupSubstationMva(...values: Array<string | number | boolean | null | undefined>): SubstationMvaRating | undefined {
+  const haystack = normalizeLookupText(values.filter(Boolean).join(" "));
+  if (!haystack) return undefined;
+
+  return substationMvaRatings.find((rating) =>
+    rating.aliases.some((alias) => {
+      const normalizedAlias = normalizeLookupText(alias);
+      return normalizedAlias && haystack.includes(normalizedAlias);
+    }),
+  );
+}
+
+function mvaRatingValue(
+  properties: Record<string, string | number | boolean | null> | undefined,
+  documentedRating?: SubstationMvaRating,
+): string {
+  if (documentedRating) return documentedRating.mvaLabel;
   const taggedRating = formatMva(firstInfrastructureValue(properties, ["rating:mva", "capacity:mva", "transformer:rating"]));
   if (taggedRating !== "Not available in source") return taggedRating;
-  return "Lookup required in planning docs / SLD";
+  return "Not found in checked public sources";
 }
 
 function formatPublicDate(value: string | number | boolean | null | undefined): string {
@@ -410,17 +436,26 @@ function infrastructurePopupHtml(
     : hifld?.MAX_VOLT
       ? `${hifld.MAX_VOLT}${hifld.MIN_VOLT && hifld.MIN_VOLT !== hifld.MAX_VOLT ? ` / ${hifld.MIN_VOLT}` : ""}`
       : undefined;
+  const documentedMva = lookupSubstationMva(
+    title,
+    properties?.name,
+    properties?.ref,
+    properties?.substation,
+    hifld?.NAME,
+    hifld?.ID,
+  );
   const sourceNote = hifld
-    ? "Sources checked: OpenInfraMap/OpenStreetMap and HIFLD public FeatureServer. Official MVA ratings are not inferred from map tiles; confirm missing values through utility planning documents, interconnection studies, FERC Form 715, or substation single-line diagrams."
-    : "Sources checked: OpenInfraMap/OpenStreetMap. Hover pause checks HIFLD public FeatureServer when available. Missing MVA ratings require utility planning documents, interconnection studies, FERC Form 715, or substation single-line diagrams.";
+    ? "Sources checked: OpenInfraMap/OpenStreetMap, HIFLD public FeatureServer, and the app's public planning-document MVA lookup."
+    : "Sources checked: OpenInfraMap/OpenStreetMap and the app's public planning-document MVA lookup. Hover pause checks HIFLD public FeatureServer when available.";
   const rows = [
     ["Feature", featureType],
     ["Name", isSubstation && hifld?.NAME ? hifld.NAME : title],
     ["Voltage", formatKv(hifldVoltage ?? firstInfrastructureValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]))],
     ["Built", formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]))],
     ["Last upgraded", "Not available in checked public sources"],
-    ["MVA rating", mvaRatingValue(properties)],
-    ["MVA source path", "Utility planning docs / interconnection studies / FERC Form 715 / SLD"],
+    ["MVA rating", mvaRatingValue(properties, documentedMva)],
+    ["MVA source", documentedMva ? documentedMva.sourceTitle : "No matching public planning-document rating found"],
+    ["Rating type", documentedMva ? documentedMva.ratingType : "Not available"],
     ["Operator", hifld?.OWNER ?? firstInfrastructureValue(properties, ["operator", "owner"])],
     ["Status", hifld?.STATUS ?? firstInfrastructureValue(properties, ["status"])],
     ["HIFLD source date", formatPublicDate(hifld?.SOURCEDATE)],
@@ -451,6 +486,7 @@ export default function InterconnectionPage() {
       interconnectionData.nearbyActive[0],
     [selectedId],
   );
+  const selectedMva = selected ? lookupSubstationMva(selected.poi) : undefined;
 
   return (
     <main className="min-h-screen bg-[#f7f5ef] text-[#172026]">
@@ -542,6 +578,8 @@ export default function InterconnectionPage() {
                 <Info label="Status" value={selected.status} />
                 <Info label="TO" value={selected.transmissionOwner} />
                 <Info label="Type" value={selected.generationType} />
+                <Info label="POI MVA" value={selectedMva?.mvaLabel ?? "No public rating found"} />
+                <Info label="MVA Source" value={selectedMva?.sourceTitle ?? "Checked lookup"} />
               </div>
               <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
                 Queue-stage concentration within 300 miles is mostly DISIS clusters, especially DISIS-2024-001.
@@ -557,6 +595,44 @@ export default function InterconnectionPage() {
       <section className="mx-auto grid max-w-7xl gap-5 px-6 pb-6 lg:grid-cols-2">
         <Breakdown title="Nearby Active by Stage" items={interconnectionData.stats.nearbyActiveByStage} />
         <Breakdown title="Nearby Active MW by Type" items={interconnectionData.stats.nearbyActiveByType.map((item) => ({ name: item.name, count: item.mw }))} suffix=" MW" />
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-6">
+        <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
+          <div className="border-b border-[#e5ded2] p-4">
+            <h2 className="text-lg font-semibold">Source-Backed Substation MVA Ratings</h2>
+            <p className="text-xs text-[#66727a]">
+              Ratings are shown only where a public planning or interconnection document states the value.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[840px] text-left text-sm">
+              <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
+                <tr>
+                  <th className="px-3 py-3">Substation</th>
+                  <th className="px-3 py-3">MVA</th>
+                  <th className="px-3 py-3">Rating Type</th>
+                  <th className="px-3 py-3">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {substationMvaRatings.map((rating) => (
+                  <tr className="border-t border-[#eee8de]" key={rating.name}>
+                    <td className="px-3 py-3 font-semibold">{rating.name}</td>
+                    <td className="px-3 py-3">{rating.mvaLabel}</td>
+                    <td className="px-3 py-3">{rating.ratingType}</td>
+                    <td className="max-w-[420px] px-3 py-3 text-[#4b565e]">
+                      <a className="font-semibold text-[#245a7a] underline-offset-2 hover:underline" href={rating.sourceUrl} rel="noreferrer" target="_blank">
+                        {rating.sourceTitle}
+                      </a>
+                      <span className="mt-1 block text-xs leading-5">{rating.sourceDetail}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 pb-10">
@@ -576,32 +652,14 @@ export default function InterconnectionPage() {
                   <th className="px-3 py-3">Stage</th>
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">POI</th>
+                  <th className="px-3 py-3">POI MVA</th>
                   <th className="px-3 py-3">TO</th>
                   <th className="px-3 py-3">COD</th>
                 </tr>
               </thead>
               <tbody>
                 {interconnectionData.nearbyActive.map((project) => (
-                  <tr className="border-t border-[#eee8de] hover:bg-[#fbf8f1]" key={project.id}>
-                    <td className="px-3 py-3 font-semibold text-[#172026]">{project.id}</td>
-                    <td className="px-3 py-3">{project.distanceMiles}</td>
-                    <td className="px-3 py-3">{formatMw(project.capacityMw)}</td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: projectColor(project) }} />
-                        {project.generationType}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="rounded px-2 py-1 text-xs font-semibold text-white" style={{ background: stageColor(project.queueStage) }}>
-                        {project.queueStage}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">{project.status}</td>
-                    <td className="max-w-[260px] px-3 py-3 text-[#4b565e]">{project.poi}</td>
-                    <td className="px-3 py-3">{project.transmissionOwner}</td>
-                    <td className="px-3 py-3">{project.commercialOperationDate ?? "Pending"}</td>
-                  </tr>
+                  <NearbyProjectRow key={project.id} project={project} />
                 ))}
               </tbody>
             </table>
@@ -619,6 +677,40 @@ function Metric({ detail, label, value }: { detail: string; label: string; value
       <p className="mt-2 text-2xl font-semibold text-[#172026]">{value}</p>
       <p className="mt-1 text-xs text-[#66727a]">{detail}</p>
     </div>
+  );
+}
+
+function NearbyProjectRow({ project }: { project: Project }) {
+  const mva = lookupSubstationMva(project.poi);
+
+  return (
+    <tr className="border-t border-[#eee8de] hover:bg-[#fbf8f1]">
+      <td className="px-3 py-3 font-semibold text-[#172026]">{project.id}</td>
+      <td className="px-3 py-3">{project.distanceMiles}</td>
+      <td className="px-3 py-3">{formatMw(project.capacityMw)}</td>
+      <td className="px-3 py-3">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: projectColor(project) }} />
+          {project.generationType}
+        </span>
+      </td>
+      <td className="px-3 py-3">
+        <span className="rounded px-2 py-1 text-xs font-semibold text-white" style={{ background: stageColor(project.queueStage) }}>
+          {project.queueStage}
+        </span>
+      </td>
+      <td className="px-3 py-3">{project.status}</td>
+      <td className="max-w-[260px] px-3 py-3 text-[#4b565e]">{project.poi}</td>
+      <td className="max-w-[220px] px-3 py-3 text-[#4b565e]">
+        {mva ? (
+          <span title={`${mva.ratingType}. ${mva.sourceDetail}`}>{mva.mvaLabel}</span>
+        ) : (
+          "No public rating found"
+        )}
+      </td>
+      <td className="px-3 py-3">{project.transmissionOwner}</td>
+      <td className="px-3 py-3">{project.commercialOperationDate ?? "Pending"}</td>
+    </tr>
   );
 }
 
