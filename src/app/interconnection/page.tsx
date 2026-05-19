@@ -617,7 +617,7 @@ export default function InterconnectionPage() {
                 onClick={() => setMode("active")}
                 type="button"
               >
-                Active Queue
+                Active SPP Queue
               </button>
               <button
                 className={`rounded px-3 py-1.5 text-xs font-semibold ${mode === "nearby" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
