@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { interconnectionData } from "@/data/interconnection-data";
+import { sppStudyGridMetrics } from "@/data/spp-study-grid-metrics";
 import { substationMvaRatings, type SubstationMvaRating } from "@/data/substation-mva-ratings";
 
 type Project = (typeof interconnectionData.activeProjects)[number];
@@ -558,6 +559,7 @@ export default function InterconnectionPage() {
     [selectedId],
   );
   const selectedMva = selected ? lookupSubstationMva(selected.poi) : undefined;
+  const selectedGridMetric = selected ? sppStudyGridMetrics[selected.id] : undefined;
 
   return (
     <main className="min-h-screen bg-[#f7f5ef] text-[#172026]">
@@ -651,6 +653,8 @@ export default function InterconnectionPage() {
                 <Info label="Type" value={selected.generationType} />
                 <Info label="POI MVA" value={selectedMva?.mvaLabel ?? "No public rating found"} />
                 <Info label="MVA Source" value={selectedMva?.sourceTitle ?? "Checked lookup"} />
+                <Info label="SC MVA" value={selectedGridMetric ? formatMw(selectedGridMetric.shortCircuitMva) : "Not in study extract"} />
+                <Info label="SCR" value={selectedGridMetric ? formatMw(selectedGridMetric.shortCircuitRatio) : "Not in study extract"} />
               </div>
               <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
                 Queue-stage concentration within 300 miles is mostly DISIS clusters, especially DISIS-2024-001.
@@ -673,6 +677,9 @@ export default function InterconnectionPage() {
           <div className="border-b border-[#e5ded2] p-4">
             <h2 className="text-lg font-semibold">Nearby Active Queue Projects</h2>
             <p className="text-xs text-[#66727a]">Sorted by distance from the parcel center. Radius is 300 miles because no same-feeder/substation area was visible.</p>
+            <p className="mt-1 text-xs text-[#66727a]">
+              SC MVA and SCR are point-of-interconnection grid-strength metrics from SPP study workbooks where available; they are not transformer thermal ratings.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-left text-sm">
@@ -686,6 +693,8 @@ export default function InterconnectionPage() {
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">POI</th>
                   <th className="px-3 py-3">POI MVA</th>
+                  <th className="px-3 py-3">SC MVA</th>
+                  <th className="px-3 py-3">SCR</th>
                   <th className="px-3 py-3">TO</th>
                   <th className="px-3 py-3">COD</th>
                 </tr>
@@ -715,6 +724,7 @@ function Metric({ detail, label, value }: { detail: string; label: string; value
 
 function NearbyProjectRow({ project }: { project: Project }) {
   const mva = lookupSubstationMva(project.poi);
+  const gridMetric = sppStudyGridMetrics[project.id];
 
   return (
     <tr className="border-t border-[#eee8de] hover:bg-[#fbf8f1]">
@@ -740,6 +750,12 @@ function NearbyProjectRow({ project }: { project: Project }) {
         ) : (
           "No public rating found"
         )}
+      </td>
+      <td className="px-3 py-3" title={gridMetric?.sourceTitle}>
+        {gridMetric ? formatMw(gridMetric.shortCircuitMva) : "Not in extract"}
+      </td>
+      <td className="px-3 py-3" title={gridMetric?.sourceTitle}>
+        {gridMetric ? formatMw(gridMetric.shortCircuitRatio) : "Not in extract"}
       </td>
       <td className="px-3 py-3">{project.transmissionOwner}</td>
       <td className="px-3 py-3">{project.commercialOperationDate ?? "Pending"}</td>
