@@ -192,12 +192,18 @@ function lookupSubstationMva(...values: Array<string | number | boolean | null |
   const haystack = normalizeLookupText(values.filter(Boolean).join(" "));
   if (!haystack) return undefined;
 
-  return substationMvaRatings.find((rating) =>
-    rating.aliases.some((alias) => {
+  let bestMatch: { rating: SubstationMvaRating; score: number } | undefined;
+
+  for (const rating of substationMvaRatings) {
+    for (const alias of rating.aliases) {
       const normalizedAlias = normalizeLookupText(alias);
-      return normalizedAlias && haystack.includes(normalizedAlias);
-    }),
-  );
+      if (!normalizedAlias || !haystack.includes(normalizedAlias)) continue;
+      const score = normalizedAlias.length;
+      if (!bestMatch || score > bestMatch.score) bestMatch = { rating, score };
+    }
+  }
+
+  return bestMatch?.rating;
 }
 
 function mvaRatingValue(
@@ -595,44 +601,6 @@ export default function InterconnectionPage() {
       <section className="mx-auto grid max-w-7xl gap-5 px-6 pb-6 lg:grid-cols-2">
         <Breakdown title="Nearby Active by Stage" items={interconnectionData.stats.nearbyActiveByStage} />
         <Breakdown title="Nearby Active MW by Type" items={interconnectionData.stats.nearbyActiveByType.map((item) => ({ name: item.name, count: item.mw }))} suffix=" MW" />
-      </section>
-
-      <section className="mx-auto max-w-7xl px-6 pb-6">
-        <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
-          <div className="border-b border-[#e5ded2] p-4">
-            <h2 className="text-lg font-semibold">Source-Backed Substation MVA Ratings</h2>
-            <p className="text-xs text-[#66727a]">
-              Ratings are shown only where a public planning or interconnection document states the value.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[840px] text-left text-sm">
-              <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
-                <tr>
-                  <th className="px-3 py-3">Substation</th>
-                  <th className="px-3 py-3">MVA</th>
-                  <th className="px-3 py-3">Rating Type</th>
-                  <th className="px-3 py-3">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {substationMvaRatings.map((rating) => (
-                  <tr className="border-t border-[#eee8de]" key={rating.name}>
-                    <td className="px-3 py-3 font-semibold">{rating.name}</td>
-                    <td className="px-3 py-3">{rating.mvaLabel}</td>
-                    <td className="px-3 py-3">{rating.ratingType}</td>
-                    <td className="max-w-[420px] px-3 py-3 text-[#4b565e]">
-                      <a className="font-semibold text-[#245a7a] underline-offset-2 hover:underline" href={rating.sourceUrl} rel="noreferrer" target="_blank">
-                        {rating.sourceTitle}
-                      </a>
-                      <span className="mt-1 block text-xs leading-5">{rating.sourceDetail}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 pb-10">

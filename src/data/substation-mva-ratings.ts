@@ -21,6 +21,56 @@ export const substationMvaRatings: SubstationMvaRating[] = [
       "https://opsportal.spp.org/documents/studies/files/2024_Generation_Studies/FINAL_SPP_Report_GEN-2024-SR13_10152024.pdf",
   },
   {
+    aliases: ["pirkey", "pirkey 138", "pirkey power station", "pirkey 138 kv"],
+    mvaLabel: "825 MVA",
+    name: "Pirkey Power Station / 138 kV POI",
+    ratingType: "AEP receipt point rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Pirkey Power Station, ownership AEP, voltage 138 kV, rating 825 MVA.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
+    aliases: ["welsh", "welsh 345", "welsh power station", "welsh 345 kv"],
+    mvaLabel: "2,037 MVA",
+    name: "Welsh Power Station / 345 kV POI",
+    ratingType: "AEP receipt point rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Welsh Power Station, ownership AEP, voltage 345 kV, rating 2,037 MVA.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
+    aliases: ["wilkes", "wilkes 138", "wilkes power station", "wilkes 138 kv"],
+    mvaLabel: "672 MVA",
+    name: "Wilkes Power Station / 138 kV POI",
+    ratingType: "AEP receipt point rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Wilkes Power Station, ownership AEP, voltage 138 kV, rating 672 MVA.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
+    aliases: ["wilkes 345", "wilkes 345 kv"],
+    mvaLabel: "432 MVA",
+    name: "Wilkes Power Station / 345 kV POI",
+    ratingType: "AEP receipt point rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Wilkes Power Station, ownership AEP, voltage 345 kV, rating 432 MVA.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
+    aliases: ["longwood el dorado", "longwood to el dorado", "longwood - el dorado", "longwood"],
+    mvaLabel: "896 MVA",
+    name: "Longwood - El Dorado 345 kV",
+    ratingType: "Transmission tie-line rating",
+    sourceDetail:
+      "SPP/AEP NITSA Appendix 2 lists Longwood - El Dorado, ownership AEP/Entergy, voltage 345 kV, rating 896 MVA.",
+    sourceTitle: "SPP/AEP NITSA Appendix 2 receipt points",
+    sourceUrl: "https://www.spp.org/documents/60215/20190708_amended%20filing%20-%201148r25%20aep%20nitsa%20noa_er19-1672-001.pdf",
+  },
+  {
     aliases: ["lake hawkins", "lake hawkins 345", "lake hawkins 345 kv", "perdue"],
     mvaLabel: "675/675 MVA",
     name: "Lake Hawkins / Perdue 345/138 kV",
@@ -61,4 +111,3 @@ export const substationMvaRatings: SubstationMvaRating[] = [
     sourceUrl: "https://www.spp.org/documents/16298/2012-01-18_2012%20step%20report%20filing_07-00390-ut.pdf",
   },
 ];
-
