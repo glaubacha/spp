@@ -1215,10 +1215,14 @@ function SatelliteInfrastructureMap({
       </div>
       <div className="relative bg-[#111827] p-3">
       <div className="h-[34rem] w-full overflow-hidden rounded-md" ref={containerRef} />
-      <div className="pointer-events-none absolute bottom-5 left-5 max-w-[22rem] rounded-md border border-white/20 bg-black/60 p-3 text-xs leading-5 text-white shadow-lg">
-        <div className="font-semibold">Map layers</div>
-        <div>Satellite imagery: Esri World Imagery</div>
-        <div>Grid overlay: OpenInfraMap power lines, substations, generators, plants</div>
+      <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-[17rem] rounded-md border border-white/20 bg-black/65 p-3 text-xs leading-5 text-white shadow-lg">
+        <div className="mb-1 font-semibold">Generation Type</div>
+        {Object.entries(typeColors).map(([type, color]) => (
+          <div className="flex items-center gap-2" key={type}>
+            <span className="h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: color }} />
+            <span>{type}</span>
+          </div>
+        ))}
       </div>
     </div>
     </div>
