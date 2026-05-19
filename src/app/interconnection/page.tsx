@@ -178,6 +178,12 @@ function formatMva(value: string | number | boolean | null | undefined): string 
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)} MVA`;
 }
 
+function mvaRatingValue(properties: Record<string, string | number | boolean | null> | undefined): string {
+  const taggedRating = formatMva(firstInfrastructureValue(properties, ["rating:mva", "capacity:mva", "transformer:rating"]));
+  if (taggedRating !== "Not available in source") return taggedRating;
+  return "Lookup required in planning docs / SLD";
+}
+
 function formatPublicDate(value: string | number | boolean | null | undefined): string {
   if (value === undefined || value === null || value === "") return "Not available in source";
   if (typeof value === "number") {
@@ -405,15 +411,16 @@ function infrastructurePopupHtml(
       ? `${hifld.MAX_VOLT}${hifld.MIN_VOLT && hifld.MIN_VOLT !== hifld.MAX_VOLT ? ` / ${hifld.MIN_VOLT}` : ""}`
       : undefined;
   const sourceNote = hifld
-    ? "Sources checked: OpenInfraMap/OpenStreetMap and HIFLD public FeatureServer. HIFLD does not publish built year, last-upgraded date, or MVA rating fields in these layers."
-    : "Sources checked: OpenInfraMap/OpenStreetMap. Hover pause checks HIFLD public FeatureServer when available.";
+    ? "Sources checked: OpenInfraMap/OpenStreetMap and HIFLD public FeatureServer. Official MVA ratings are not inferred from map tiles; confirm missing values through utility planning documents, interconnection studies, FERC Form 715, or substation single-line diagrams."
+    : "Sources checked: OpenInfraMap/OpenStreetMap. Hover pause checks HIFLD public FeatureServer when available. Missing MVA ratings require utility planning documents, interconnection studies, FERC Form 715, or substation single-line diagrams.";
   const rows = [
     ["Feature", featureType],
     ["Name", isSubstation && hifld?.NAME ? hifld.NAME : title],
     ["Voltage", formatKv(hifldVoltage ?? firstInfrastructureValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]))],
     ["Built", formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]))],
     ["Last upgraded", "Not available in checked public sources"],
-    ["MVA rating", formatMva(firstInfrastructureValue(properties, ["rating:mva", "capacity:mva", "transformer:rating"]))],
+    ["MVA rating", mvaRatingValue(properties)],
+    ["MVA source path", "Utility planning docs / interconnection studies / FERC Form 715 / SLD"],
     ["Operator", hifld?.OWNER ?? firstInfrastructureValue(properties, ["operator", "owner"])],
     ["Status", hifld?.STATUS ?? firstInfrastructureValue(properties, ["status"])],
     ["HIFLD source date", formatPublicDate(hifld?.SOURCEDATE)],
