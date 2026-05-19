@@ -85,10 +85,17 @@ type MapLibrePopup = {
 const typeColors: Record<string, string> = {
   "Battery/Storage": "#9b6bd3",
   Hybrid: "#d7c85f",
-  Solar: "#ee7b51",
+  Solar: "#f97316",
   Thermal: "#23395d",
   Wind: "#42a579",
   Unknown: "#718096",
+};
+
+const assetColors = {
+  generator: "#ff2d8d",
+  parcel: "#b71c1c",
+  powerLine: "#00e5ff",
+  substation: "#00ff88",
 };
 
 const stageColors = ["#2f4858", "#e4572e", "#17bebb", "#ffc914", "#6a4c93", "#76b041"];
@@ -988,8 +995,8 @@ function SatelliteInfrastructureMap({
               source: "power",
               "source-layer": "power_substation",
               paint: {
-                "fill-color": "#ffcc00",
-                "fill-opacity": 0.46,
+                "fill-color": assetColors.substation,
+                "fill-opacity": 0.5,
                 "fill-outline-color": "#111827",
               },
             },
@@ -999,11 +1006,11 @@ function SatelliteInfrastructureMap({
               source: "power",
               "source-layer": "power_substation_point",
               paint: {
-                "circle-color": "#ffcc00",
+                "circle-color": assetColors.substation,
                 "circle-opacity": 0.94,
                 "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 10, 5, 15, 9],
                 "circle-stroke-color": "#111827",
-                "circle-stroke-width": 1,
+                "circle-stroke-width": 2,
               },
             },
             {
@@ -1012,9 +1019,9 @@ function SatelliteInfrastructureMap({
               source: "power",
               "source-layer": "power_plant",
               paint: {
-                "fill-color": "#ff7a00",
-                "fill-opacity": 0.35,
-                "fill-outline-color": "#ffd166",
+                "fill-color": assetColors.generator,
+                "fill-opacity": 0.34,
+                "fill-outline-color": "#ffffff",
               },
             },
             {
@@ -1023,9 +1030,11 @@ function SatelliteInfrastructureMap({
               source: "power",
               "source-layer": "power_generator",
               paint: {
-                "circle-color": "#ff7a00",
-                "circle-opacity": 0.74,
+                "circle-color": assetColors.generator,
+                "circle-opacity": 0.82,
                 "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 1.5, 12, 4, 16, 7],
+                "circle-stroke-color": "#ffffff",
+                "circle-stroke-width": 1,
               },
             },
           ],
@@ -1316,19 +1325,19 @@ function SatelliteInfrastructureMap({
         ))}
         <div className="mb-1 mt-3 font-semibold">Map Assets</div>
         <div className="flex items-center gap-2">
-          <span className="h-0.5 w-5 rounded-full bg-[#00e5ff]" />
+          <span className="h-0.5 w-5 rounded-full" style={{ background: assetColors.powerLine }} />
           <span>Power line</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-sm border border-black bg-[#ffcc00]" />
+          <span className="h-3 w-3 rounded-sm border border-black" style={{ background: assetColors.substation }} />
           <span>Substation</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-sm border border-[#ffd166] bg-[#ff7a00]" />
+          <span className="h-3 w-3 rounded-sm border border-white" style={{ background: assetColors.generator }} />
           <span>Power plant / generator</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full border-2 border-white bg-[#b71c1c]" />
+          <span className="h-3 w-3 rounded-full border-2 border-white" style={{ background: assetColors.parcel }} />
           <span>Parcel</span>
         </div>
       </div>
