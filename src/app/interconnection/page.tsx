@@ -95,7 +95,7 @@ const assetColors = {
   generator: "#ff2d8d",
   parcel: "#b71c1c",
   powerLine: "#00e5ff",
-  substation: "#00ff88",
+  substation: "#39ff14",
 };
 
 const stageColors = ["#2f4858", "#e4572e", "#17bebb", "#ffc914", "#6a4c93", "#76b041"];
@@ -536,7 +536,8 @@ function infrastructurePopupHtml(
   const title = isLine
     ? firstInfrastructureValue(properties, ["name", "ref", "operator"])
     : firstInfrastructureValue(properties, ["name", "ref", "operator", "substation"]);
-  const featureType = isLine ? "Power line" : layerId.includes("plant") ? "Power plant" : "Substation";
+  const isGenerator = layerId.includes("plant") || layerId.includes("generator");
+  const featureType = isLine ? "Power line" : isGenerator ? "Power plant / generator" : "Substation";
   const hifldVoltage = isLine
     ? hifld?.VOLTAGE
     : hifld?.MAX_VOLT
@@ -996,7 +997,7 @@ function SatelliteInfrastructureMap({
               "source-layer": "power_substation",
               paint: {
                 "fill-color": assetColors.substation,
-                "fill-opacity": 0.5,
+                "fill-opacity": 0.78,
                 "fill-outline-color": "#111827",
               },
             },
@@ -1007,7 +1008,7 @@ function SatelliteInfrastructureMap({
               "source-layer": "power_substation_point",
               paint: {
                 "circle-color": assetColors.substation,
-                "circle-opacity": 0.94,
+                "circle-opacity": 1,
                 "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 10, 5, 15, 9],
                 "circle-stroke-color": "#111827",
                 "circle-stroke-width": 2,
