@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { interconnectionData } from "@/data/interconnection-data";
+import {
+  interconnectionFyiProjects,
+  interconnectionFyiSource,
+  type InterconnectionFyiProject,
+} from "@/data/interconnection-fyi-projects";
 import { networkUpgradeCostsByCluster, networkUpgradeCostsByProject, type NetworkUpgradeProjectCost } from "@/data/network-upgrade-costs";
 import { sppStudyGridMetrics } from "@/data/spp-study-grid-metrics";
 import { substationMvaRatings, type SubstationMvaRating } from "@/data/substation-mva-ratings";
@@ -176,6 +181,7 @@ const electricalFallbackSummary: ElectricalDistanceSummary = {
 const hifldTransmissionLinesUrl =
   "https://services2.arcgis.com/LYMgRMwHfrWWEg3s/arcgis/rest/services/HIFLD_US_Electric_Power_Transmission_Lines/FeatureServer/0/query";
 const maxElectricalSnapMiles = 35;
+const interconnectionFyiProjectLookup: Record<string, InterconnectionFyiProject> = interconnectionFyiProjects;
 
 function formatMw(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
@@ -297,6 +303,33 @@ function networkUpgradeCostTitle(cost: NetworkUpgradeProjectCost | undefined): s
   return [cost.sourceDetail, topUpgrades].filter(Boolean).join("\n");
 }
 
+function interconnectionFyiFor(project: Pick<Project, "id">): InterconnectionFyiProject | undefined {
+  return interconnectionFyiProjectLookup[project.id];
+}
+
+function sourceDateLabel(value: string | null | undefined): string {
+  return value ?? "Not listed";
+}
+
+function interconnectionFyiStatusLabel(record: InterconnectionFyiProject | undefined, fallback: string): string {
+  return record?.status ?? fallback;
+}
+
+function targetCommercialOperationDateLabel(record: InterconnectionFyiProject | undefined, project: Project): string {
+  return record?.targetCommercialOperationDate ?? project.commercialOperationDate ?? "Pending";
+}
+
+function ownerEntityLabel(record: InterconnectionFyiProject | undefined): string {
+  if (!record) return "No Interconnection.fyi record";
+  return record.owner ?? "Not public on Interconnection.fyi";
+}
+
+function withdrawnDateLabel(record: InterconnectionFyiProject | undefined): string {
+  if (!record) return "Not listed";
+  if (record.withdrawnDate) return record.withdrawnDate;
+  return record.status === "Withdrawn" ? "Not listed" : "Not withdrawn";
+}
+
 function projectColor(project: Project) {
   return typeColors[project.generationType] ?? typeColors.Unknown;
 }
@@ -340,31 +373,41 @@ function mapDataFor(
 ): GeoJsonFeatureCollection {
   return {
     type: "FeatureCollection",
-    features: projectSet.map((project) => ({
-      type: "Feature",
-      geometry: {
-        type: "Point",
-        coordinates: [project.lon, project.lat],
-      },
-      properties: {
-        id: project.id,
-        capacityMw: project.capacityMw,
-        color: projectColor(project),
-        distanceBasis: distanceBasisLabel(project, lookup),
-        electricalMiles: electricalMilesForProject(project, lookup) ?? "",
-        geospatialMiles: geospatialMilesFromParcel(project, parcelCenter),
-        generationType: project.generationType,
-        linePathMiles: lookup[project.id]?.linePathMiles ?? "",
-        nearby: distanceSortMiles(project, parcelCenter, lookup) <= 300,
-        poi: project.poi,
-        poiVoltageKv: project.poiVoltageKv ?? 0,
-        projectSnapMiles: lookup[project.id]?.projectSnapMiles ?? "",
-        queueStage: project.queueStage,
-        selected: project.id === selectedId,
-        status: project.status,
-        transmissionOwner: project.transmissionOwner,
-      },
-    })),
+    features: projectSet.map((project) => {
+      const interconnectionFyi = interconnectionFyiFor(project);
+
+      return {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [project.lon, project.lat],
+        },
+        properties: {
+          id: project.id,
+          capacityMw: project.capacityMw,
+          color: projectColor(project),
+          distanceBasis: distanceBasisLabel(project, lookup),
+          electricalMiles: electricalMilesForProject(project, lookup) ?? "",
+          fyiSourceUrl: interconnectionFyi?.sourceUrl ?? "",
+          fyiStatus: interconnectionFyiStatusLabel(interconnectionFyi, project.status),
+          geospatialMiles: geospatialMilesFromParcel(project, parcelCenter),
+          generationType: project.generationType,
+          linePathMiles: lookup[project.id]?.linePathMiles ?? "",
+          nearby: distanceSortMiles(project, parcelCenter, lookup) <= 300,
+          ownerEntity: interconnectionFyi?.owner ?? "",
+          poi: project.poi,
+          poiVoltageKv: project.poiVoltageKv ?? 0,
+          projectSnapMiles: lookup[project.id]?.projectSnapMiles ?? "",
+          queueDate: interconnectionFyi?.queueDate ?? "",
+          queueStage: project.queueStage,
+          selected: project.id === selectedId,
+          status: project.status,
+          targetCommercialOperationDate: targetCommercialOperationDateLabel(interconnectionFyi, project),
+          transmissionOwner: project.transmissionOwner,
+          withdrawnDate: interconnectionFyi?.withdrawnDate ?? "",
+        },
+      };
+    }),
   };
 }
 
@@ -1364,6 +1407,7 @@ export default function InterconnectionPage() {
   const selectedMva = selected ? lookupSubstationMva(selected.poi) : undefined;
   const selectedUpgrade = selected ? lookupSubstationUpgrade(selected.poi) : undefined;
   const selectedGridMetric = selected ? sppStudyGridMetrics[selected.id] : undefined;
+  const selectedInterconnectionFyi = selected ? interconnectionFyiFor(selected) : undefined;
   const selectedNetworkCost = selected ? networkUpgradeCostFor(selected) : undefined;
 
   useEffect(() => {
@@ -1494,6 +1538,11 @@ export default function InterconnectionPage() {
               <div>
                 <p className="text-2xl font-semibold">{selected.id}</p>
                 <p className="mt-1 text-sm text-[#66727a]">{selected.poi}</p>
+                {selectedInterconnectionFyi ? (
+                  <a className="mt-2 inline-block text-xs font-semibold text-[#246b8f] underline-offset-2 hover:underline" href={selectedInterconnectionFyi.sourceUrl} rel="noreferrer" target="_blank">
+                    Open Interconnection.fyi record
+                  </a>
+                ) : null}
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <Info label="Electrical est." value={electricalDistanceLabel(selected, activeParcelCenter, electricalDistances)} />
@@ -1504,7 +1553,11 @@ export default function InterconnectionPage() {
                 <Info label="Stage" value={selected.queueStage} />
                 <Info label="Est. NU cost" value={networkUpgradeCostLabel(selectedNetworkCost)} />
                 <Info label="Est. NU $/kW" value={networkUpgradeCostPerKwLabel(selectedNetworkCost)} />
-                <Info label="Status" value={selected.status} />
+                <Info label="Status" value={interconnectionFyiStatusLabel(selectedInterconnectionFyi, selected.status)} />
+                <Info label="Queue date" value={sourceDateLabel(selectedInterconnectionFyi?.queueDate)} />
+                <Info label="Target COD" value={targetCommercialOperationDateLabel(selectedInterconnectionFyi, selected)} />
+                <Info label="Owner/entity" value={ownerEntityLabel(selectedInterconnectionFyi)} />
+                <Info label="Withdrawn date" value={withdrawnDateLabel(selectedInterconnectionFyi)} />
                 <Info label="TO" value={selected.transmissionOwner} />
                 <Info label="Type" value={selected.generationType} />
                 <Info
@@ -1569,9 +1622,12 @@ export default function InterconnectionPage() {
             <p className="mt-1 text-xs text-[#66727a]">
               Electrical estimates include public-line path plus snap-to-line distances. Estimated NU cost is the SPP assigned network-upgrade/interconnection cost for that queue request from the latest matched study workbook.
             </p>
+            <p className="mt-1 text-xs text-[#66727a]">
+              Queue date, target COD, status, and withdrawn date are joined from public {interconnectionFyiSource.name} project records. Owner/entity uses the public Interconnecting Entity field when available.
+            </p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1500px] text-left text-sm">
+            <table className="w-full min-w-[1780px] text-left text-sm">
               <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
                 <tr>
                   <th className="px-3 py-3">GI</th>
@@ -1584,13 +1640,16 @@ export default function InterconnectionPage() {
                   <th className="px-3 py-3">Est. NU cost</th>
                   <th className="px-3 py-3">Est. NU $/kW</th>
                   <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3">Queue date</th>
+                  <th className="px-3 py-3">Target COD</th>
+                  <th className="px-3 py-3">Owner/entity</th>
+                  <th className="px-3 py-3">Withdrawn</th>
                   <th className="px-3 py-3">POI</th>
                   <th className="px-3 py-3">POI upgrade</th>
                   <th className="px-3 py-3">POI MVA</th>
                   <th className="px-3 py-3">SC MVA</th>
                   <th className="px-3 py-3">SCR</th>
                   <th className="px-3 py-3">TO</th>
-                  <th className="px-3 py-3">COD</th>
                 </tr>
               </thead>
               <tbody>
@@ -1761,6 +1820,7 @@ function NearbyProjectRow({
   const mva = lookupSubstationMva(project.poi);
   const upgrade = lookupSubstationUpgrade(project.poi);
   const gridMetric = sppStudyGridMetrics[project.id];
+  const interconnectionFyi = interconnectionFyiFor(project);
   const networkCost = networkUpgradeCostFor(project);
 
   return (
@@ -1791,7 +1851,13 @@ function NearbyProjectRow({
       <td className="px-3 py-3" title={networkCost?.sourceTitle}>
         {networkUpgradeCostPerKwLabel(networkCost)}
       </td>
-      <td className="px-3 py-3">{project.status}</td>
+      <td className="px-3 py-3">{interconnectionFyiStatusLabel(interconnectionFyi, project.status)}</td>
+      <td className="px-3 py-3">{sourceDateLabel(interconnectionFyi?.queueDate)}</td>
+      <td className="px-3 py-3">{targetCommercialOperationDateLabel(interconnectionFyi, project)}</td>
+      <td className="max-w-[220px] px-3 py-3 text-[#4b565e]" title={interconnectionFyi ? `${interconnectionFyi.ownerSourceField} from ${interconnectionFyiSource.name}` : undefined}>
+        {ownerEntityLabel(interconnectionFyi)}
+      </td>
+      <td className="px-3 py-3">{withdrawnDateLabel(interconnectionFyi)}</td>
       <td className="max-w-[260px] px-3 py-3 text-[#4b565e]">{project.poi}</td>
       <td className="max-w-[220px] px-3 py-3 text-[#4b565e]">
         {upgrade ? (
@@ -1814,7 +1880,6 @@ function NearbyProjectRow({
         {gridMetric ? formatMw(gridMetric.shortCircuitRatio) : "Not in extract"}
       </td>
       <td className="px-3 py-3">{project.transmissionOwner}</td>
-      <td className="px-3 py-3">{project.commercialOperationDate ?? "Pending"}</td>
     </tr>
   );
 }
@@ -2326,10 +2391,15 @@ function SatelliteInfrastructureMap({
               : `${escapeHtml(props.geospatialMiles)} mi straight-line fallback`;
           const straightLabel = Number.isFinite(geospatialMiles) ? `${formatMiles(geospatialMiles)} mi straight-line` : "";
           const snapLabel = Number.isFinite(projectSnapMiles) ? `${formatMiles(projectSnapMiles)} mi project-line snap` : "";
+          const sourceUrl = String(props.fyiSourceUrl ?? "");
+          const sourceLink = sourceUrl
+            ? `<br><a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Open Interconnection.fyi record</a>`
+            : "";
+          const withdrawnLine = props.withdrawnDate ? `<br>Withdrawn date: ${escapeHtml(props.withdrawnDate)}` : "";
           popupRef.current = new window.maplibregl.Popup({ closeButton: false, offset: 12 })
             .setLngLat(event.lngLat)
             .setHTML(
-              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>Est. NU cost: ${escapeHtml(networkUpgradeCostLabel(networkCost))}<br>${escapeHtml(props.queueStage)}<br>${escapeHtml(electricalLabel)} from parcel${straightLabel ? `<br>${escapeHtml(straightLabel)}` : ""}${snapLabel ? `<br>${escapeHtml(snapLabel)}` : ""}`,
+              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>Status: ${escapeHtml(props.fyiStatus ?? props.status)}<br>Queue date: ${escapeHtml(props.queueDate || "Not listed")}<br>Target COD: ${escapeHtml(props.targetCommercialOperationDate || "Pending")}<br>Owner/entity: ${escapeHtml(props.ownerEntity || "Not public on Interconnection.fyi")}${withdrawnLine}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>Est. NU cost: ${escapeHtml(networkUpgradeCostLabel(networkCost))}<br>${escapeHtml(props.queueStage)}<br>${escapeHtml(electricalLabel)} from parcel${straightLabel ? `<br>${escapeHtml(straightLabel)}` : ""}${snapLabel ? `<br>${escapeHtml(snapLabel)}` : ""}${sourceLink}`,
             )
             .addTo(map);
         });
@@ -2598,7 +2668,7 @@ function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-[#e5ded2] bg-[#fbf8f1] p-3">
       <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">{label}</p>
-      <p className="mt-1 font-semibold text-[#172026]">{value}</p>
+      <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#172026]">{value}</p>
     </div>
   );
 }
