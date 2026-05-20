@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { interconnectionData } from "@/data/interconnection-data";
+import { networkUpgradeCostsByCluster, networkUpgradeCostsByProject, type NetworkUpgradeProjectCost } from "@/data/network-upgrade-costs";
 import { sppStudyGridMetrics } from "@/data/spp-study-grid-metrics";
 import { substationMvaRatings, type SubstationMvaRating } from "@/data/substation-mva-ratings";
 import { substationUpgradeRecords, type SubstationUpgradeRecord } from "@/data/substation-upgrade-years";
@@ -146,6 +147,21 @@ function formatMw(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
 }
 
+function formatUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "Not available";
+  return new Intl.NumberFormat("en-US", {
+    currency: "USD",
+    maximumFractionDigits: value >= 1_000_000 ? 1 : 0,
+    notation: value >= 1_000_000 ? "compact" : "standard",
+    style: "currency",
+  }).format(value);
+}
+
+function formatUsdPerKw(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "Not available";
+  return `$${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value)}/kW`;
+}
+
 function formatMiles(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
 }
@@ -199,6 +215,30 @@ function formatPoiVoltage(value: string | number | boolean | null | undefined): 
   const numeric = numericValuesFrom(value)[0];
   if (!Number.isFinite(numeric) || numeric <= 0 || isSentinelNumber(numeric)) return "Not listed";
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)} kV`;
+}
+
+function networkUpgradeCostFor(project: Pick<Project, "id">): NetworkUpgradeProjectCost | undefined {
+  return networkUpgradeCostsByProject[project.id];
+}
+
+function networkUpgradeCostLabel(cost: NetworkUpgradeProjectCost | undefined): string {
+  if (!cost) return "No SPP cost record found";
+  if (cost.allocatedCostUsd === null) return cost.costUnavailableReason ?? "Not available in SPP workbook";
+  return formatUsd(cost.allocatedCostUsd);
+}
+
+function networkUpgradeCostPerKwLabel(cost: NetworkUpgradeProjectCost | undefined): string {
+  if (!cost) return "Not found";
+  if (cost.costPerKw === null) return cost.costUnavailableReason ?? "Not available";
+  return formatUsdPerKw(cost.costPerKw);
+}
+
+function networkUpgradeCostTitle(cost: NetworkUpgradeProjectCost | undefined): string | undefined {
+  if (!cost) return undefined;
+  const topUpgrades = cost.topUpgrades
+    .map((upgrade) => `${upgrade.costUsd === null ? "TBD" : formatUsd(upgrade.costUsd)} - ${upgrade.name}`)
+    .join("\n");
+  return [cost.sourceDetail, topUpgrades].filter(Boolean).join("\n");
 }
 
 function projectColor(project: Project) {
@@ -1205,6 +1245,8 @@ export default function InterconnectionPage() {
     [activeParcelCenter, electricalDistances],
   );
   const nearbyActiveMw = visibleNearbyProjects.reduce((sum, project) => sum + project.capacityMw, 0);
+  const nearbyNetworkCostSummary = useMemo(() => summarizeNetworkUpgradeCosts(visibleNearbyProjects), [visibleNearbyProjects]);
+  const nearbyNetworkClusterSummaries = useMemo(() => networkUpgradeClusterSummaries(visibleNearbyProjects), [visibleNearbyProjects]);
   const nearestActive = useMemo(
     () =>
       [...interconnectionData.activeProjects].sort(
@@ -1225,6 +1267,7 @@ export default function InterconnectionPage() {
   const selectedMva = selected ? lookupSubstationMva(selected.poi) : undefined;
   const selectedUpgrade = selected ? lookupSubstationUpgrade(selected.poi) : undefined;
   const selectedGridMetric = selected ? sppStudyGridMetrics[selected.id] : undefined;
+  const selectedNetworkCost = selected ? networkUpgradeCostFor(selected) : undefined;
 
   useEffect(() => {
     if (selectedYear !== "all" && !yearOptions.includes(selectedYear)) setSelectedYear("all");
@@ -1266,7 +1309,7 @@ export default function InterconnectionPage() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-4 px-6 py-5 md:grid-cols-4">
+      <section className="mx-auto grid max-w-7xl gap-4 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
         <Metric label="Active queue" value={interconnectionData.stats.activeQueueCount.toString()} detail={`${formatMw(interconnectionData.stats.activeQueueMw)} MW`} />
         <Metric
           label="Nearby active"
@@ -1277,6 +1320,11 @@ export default function InterconnectionPage() {
           label="Nearest active"
           value={nearestActive ? electricalDistanceLabel(nearestActive, activeParcelCenter, electricalDistances) : "None"}
           detail={nearestActive?.id ?? "None"}
+        />
+        <Metric
+          label="Nearby est. NU cost"
+          value={formatUsd(nearbyNetworkCostSummary.knownCostUsd)}
+          detail={`${nearbyNetworkCostSummary.knownCount}/${visibleNearbyProjects.length} source-backed${nearbyNetworkCostSummary.tbdCount ? `, ${nearbyNetworkCostSummary.tbdCount} TBD` : ""}`}
         />
         <Metric label="Decoded rows" value={interconnectionData.stats.totalDecodedProjects.toString()} detail="PowerBI queue projects" />
       </section>
@@ -1355,6 +1403,8 @@ export default function InterconnectionPage() {
                 <Info label="Straight-line" value={`${formatMiles(geospatialMilesFromParcel(selected, activeParcelCenter))} mi`} />
                 <Info label="Capacity" value={`${formatMw(selected.capacityMw)} MW`} />
                 <Info label="Stage" value={selected.queueStage} />
+                <Info label="Est. NU cost" value={networkUpgradeCostLabel(selectedNetworkCost)} />
+                <Info label="Est. NU $/kW" value={networkUpgradeCostPerKwLabel(selectedNetworkCost)} />
                 <Info label="Status" value={selected.status} />
                 <Info label="TO" value={selected.transmissionOwner} />
                 <Info label="Type" value={selected.generationType} />
@@ -1368,6 +1418,25 @@ export default function InterconnectionPage() {
                 <Info label="SCR" value={selectedGridMetric ? formatMw(selectedGridMetric.shortCircuitRatio) : "Not in study extract"} />
               </div>
               <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
+                <div className="font-semibold text-[#172026]">Network upgrade cost source</div>
+                {selectedNetworkCost ? (
+                  <>
+                    <a className="text-[#246b8f] underline-offset-2 hover:underline" href={selectedNetworkCost.sourceUrl} rel="noreferrer" target="_blank">
+                      {selectedNetworkCost.sourceTitle}
+                    </a>
+                    <div className="mt-1">{selectedNetworkCost.sourceDetail}</div>
+                    {selectedNetworkCost.topUpgrades.length > 0 ? (
+                      <div className="mt-2">
+                        Top driver: {selectedNetworkCost.topUpgrades[0].costUsd === null ? "TBD" : formatUsd(selectedNetworkCost.topUpgrades[0].costUsd)} -{" "}
+                        {selectedNetworkCost.topUpgrades[0].name}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  "No matching SPP study workbook cost record found for this queue position."
+                )}
+              </div>
+              <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
                 {electricalDistanceSummary.message} The parcel itself can be replaced with a coordinate or uploaded KML/KMZ,
                 which updates the active parcel marker and recalculates distances.
               </div>
@@ -1376,6 +1445,10 @@ export default function InterconnectionPage() {
             <p className="mt-3 text-sm text-[#66727a]">No nearby active queue projects were decoded.</p>
           )}
         </aside>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-6">
+        <ClusterNetworkUpgradeCosts summaries={nearbyNetworkClusterSummaries} />
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-5 px-6 pb-6 lg:grid-cols-2">
@@ -1394,9 +1467,12 @@ export default function InterconnectionPage() {
             <p className="mt-1 text-xs text-[#66727a]">
               SC MVA and SCR are point-of-interconnection grid-strength metrics from SPP study workbooks where available; they are not transformer thermal ratings.
             </p>
+            <p className="mt-1 text-xs text-[#66727a]">
+              Estimated NU cost is the SPP assigned network-upgrade/interconnection cost for that queue request from the latest matched study workbook.
+            </p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1360px] text-left text-sm">
               <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
                 <tr>
                   <th className="px-3 py-3">GI</th>
@@ -1405,6 +1481,8 @@ export default function InterconnectionPage() {
                   <th className="px-3 py-3">MW</th>
                   <th className="px-3 py-3">Type</th>
                   <th className="px-3 py-3">Stage</th>
+                  <th className="px-3 py-3">Est. NU cost</th>
+                  <th className="px-3 py-3">Est. NU $/kW</th>
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">POI</th>
                   <th className="px-3 py-3">POI upgrade</th>
@@ -1443,6 +1521,59 @@ function Metric({ detail, label, value }: { detail: string; label: string; value
   );
 }
 
+function ClusterNetworkUpgradeCosts({ summaries }: { summaries: ReturnType<typeof networkUpgradeClusterSummaries> }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
+      <div className="border-b border-[#e5ded2] p-4">
+        <h2 className="text-lg font-semibold">Estimated Network Upgrade Costs by Queue Cluster</h2>
+        <p className="mt-1 text-xs leading-5 text-[#66727a]">
+          Source-backed SPP study workbook totals, plus summed assigned upgrade costs for the nearby projects currently in view.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[980px] text-left text-sm">
+          <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
+            <tr>
+              <th className="px-3 py-3">Cluster</th>
+              <th className="px-3 py-3">SPP total NU estimate</th>
+              <th className="px-3 py-3">Cluster MW</th>
+              <th className="px-3 py-3">Median $/kW</th>
+              <th className="px-3 py-3">Nearby assigned NU</th>
+              <th className="px-3 py-3">Coverage</th>
+              <th className="px-3 py-3">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summaries.map((summary) => (
+              <tr className="border-t border-[#eee8de]" key={summary.stage}>
+                <td className="px-3 py-3 font-semibold text-[#172026]">{summary.stage}</td>
+                <td className="px-3 py-3">{formatUsd(summary.clusterCost?.totalNetworkUpgradeCostUsd)}</td>
+                <td className="px-3 py-3">{summary.clusterCost?.clusterMw ? `${formatMw(summary.clusterCost.clusterMw)} MW` : "Not available"}</td>
+                <td className="px-3 py-3">{formatUsdPerKw(summary.clusterCost?.medianCostPerKw)}</td>
+                <td className="px-3 py-3">{formatUsd(summary.allocatedCostUsd)}</td>
+                <td className="px-3 py-3 text-[#4b565e]">
+                  {summary.knownCount}/{summary.projectCount} costed
+                  {summary.tbdCount ? `, ${summary.tbdCount} TBD` : ""}
+                  {summary.missingCount ? `, ${summary.missingCount} missing` : ""}
+                </td>
+                <td className="max-w-[280px] px-3 py-3 text-[#4b565e]">
+                  {summary.clusterCost ? (
+                    <a className="text-[#246b8f] underline-offset-2 hover:underline" href={summary.clusterCost.sourceUrl} rel="noreferrer" target="_blank" title={summary.clusterCost.sourceDetail}>
+                      {summary.clusterCost.posted}
+                    </a>
+                  ) : (
+                    "No SPP source matched"
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function breakdownByStage(projects: readonly Project[]) {
   const counts = new Map<string, number>();
   for (const project of projects) counts.set(project.queueStage, (counts.get(project.queueStage) ?? 0) + 1);
@@ -1453,6 +1584,69 @@ function breakdownMwByType(projects: readonly Project[]) {
   const counts = new Map<string, number>();
   for (const project of projects) counts.set(project.generationType, (counts.get(project.generationType) ?? 0) + project.capacityMw);
   return Array.from(counts, ([name, count]) => ({ name, count: roundMiles(count) })).sort((a, b) => b.count - a.count);
+}
+
+function summarizeNetworkUpgradeCosts(projects: readonly Project[]) {
+  let knownCostUsd = 0;
+  let knownCount = 0;
+  let tbdCount = 0;
+  let missingCount = 0;
+
+  for (const project of projects) {
+    const cost = networkUpgradeCostFor(project);
+    if (!cost) {
+      missingCount += 1;
+    } else if (cost.allocatedCostUsd === null) {
+      tbdCount += 1;
+    } else {
+      knownCostUsd += cost.allocatedCostUsd;
+      knownCount += 1;
+    }
+  }
+
+  return { knownCostUsd, knownCount, missingCount, tbdCount };
+}
+
+function networkUpgradeClusterSummaries(projects: readonly Project[]) {
+  const summaries = new Map<
+    string,
+    {
+      allocatedCostUsd: number;
+      knownCount: number;
+      missingCount: number;
+      projectCount: number;
+      stage: string;
+      tbdCount: number;
+    }
+  >();
+
+  for (const project of projects) {
+    const summary =
+      summaries.get(project.queueStage) ??
+      {
+        allocatedCostUsd: 0,
+        knownCount: 0,
+        missingCount: 0,
+        projectCount: 0,
+        stage: project.queueStage,
+        tbdCount: 0,
+      };
+    const cost = networkUpgradeCostFor(project);
+    summary.projectCount += 1;
+    if (!cost) {
+      summary.missingCount += 1;
+    } else if (cost.allocatedCostUsd === null) {
+      summary.tbdCount += 1;
+    } else {
+      summary.allocatedCostUsd += cost.allocatedCostUsd;
+      summary.knownCount += 1;
+    }
+    summaries.set(project.queueStage, summary);
+  }
+
+  return Array.from(summaries.values())
+    .map((summary) => ({ ...summary, clusterCost: networkUpgradeCostsByCluster[summary.stage] }))
+    .sort((a, b) => (b.clusterCost?.totalNetworkUpgradeCostUsd ?? 0) - (a.clusterCost?.totalNetworkUpgradeCostUsd ?? 0));
 }
 
 function NearbyProjectRow({
@@ -1467,6 +1661,7 @@ function NearbyProjectRow({
   const mva = lookupSubstationMva(project.poi);
   const upgrade = lookupSubstationUpgrade(project.poi);
   const gridMetric = sppStudyGridMetrics[project.id];
+  const networkCost = networkUpgradeCostFor(project);
 
   return (
     <tr className="border-t border-[#eee8de] hover:bg-[#fbf8f1]">
@@ -1486,6 +1681,12 @@ function NearbyProjectRow({
         <span className="rounded px-2 py-1 text-xs font-semibold text-white" style={{ background: stageColor(project.queueStage) }}>
           {project.queueStage}
         </span>
+      </td>
+      <td className="px-3 py-3" title={networkUpgradeCostTitle(networkCost)}>
+        {networkUpgradeCostLabel(networkCost)}
+      </td>
+      <td className="px-3 py-3" title={networkCost?.sourceTitle}>
+        {networkUpgradeCostPerKwLabel(networkCost)}
       </td>
       <td className="px-3 py-3">{project.status}</td>
       <td className="max-w-[260px] px-3 py-3 text-[#4b565e]">{project.poi}</td>
@@ -1914,6 +2115,7 @@ function SatelliteInfrastructureMap({
           const props = event.features?.[0]?.properties ?? {};
           const mw = Number(props.capacityMw);
           const capacityLabel = Number.isFinite(mw) && mw > 0 ? `${formatMw(mw)} MW` : "MW not listed";
+          const networkCost = networkUpgradeCostsByProject[projectId];
           const electricalMiles = Number(props.electricalMiles);
           const electricalLabel =
             Number.isFinite(electricalMiles) && electricalMiles > 0
@@ -1922,7 +2124,7 @@ function SatelliteInfrastructureMap({
           popupRef.current = new window.maplibregl.Popup({ closeButton: false, offset: 12 })
             .setLngLat(event.lngLat)
             .setHTML(
-              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>${escapeHtml(props.queueStage)}<br>${electricalLabel} from parcel`,
+              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>Est. NU cost: ${escapeHtml(networkUpgradeCostLabel(networkCost))}<br>${escapeHtml(props.queueStage)}<br>${electricalLabel} from parcel`,
             )
             .addTo(map);
         });
