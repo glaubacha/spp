@@ -14,6 +14,10 @@ type QueueYear = "all" | string;
 type LonLat = { lon: number; lat: number };
 type ElectricalDistanceEstimate = {
   electricalMiles?: number;
+  electricalMilesExact?: number;
+  linePathMiles?: number;
+  parcelSnapMiles?: number;
+  projectSnapMiles?: number;
   snapMiles?: number;
   source?: string;
   status: "resolved" | "unavailable";
@@ -183,31 +187,53 @@ function haversineMiles(a: LonLat, b: LonLat): number {
   return 2 * earthRadiusMiles * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+function geospatialMilesExactFromParcel(project: Project, parcelCenter: LonLat): number {
+  return haversineMiles(parcelCenter, { lat: project.lat, lon: project.lon });
+}
+
 function geospatialMilesFromParcel(project: Project, parcelCenter: LonLat): number {
-  return roundMiles(haversineMiles(parcelCenter, { lat: project.lat, lon: project.lon }));
+  return roundMiles(geospatialMilesExactFromParcel(project, parcelCenter));
 }
 
 function electricalMilesForProject(project: Project, lookup: ElectricalDistanceLookup): number | undefined {
-  const value = lookup[project.id]?.electricalMiles;
+  const value = lookup[project.id]?.electricalMilesExact ?? lookup[project.id]?.electricalMiles;
   return Number.isFinite(value) ? value : undefined;
 }
 
 function distanceSortMiles(project: Project, parcelCenter: LonLat, lookup: ElectricalDistanceLookup): number {
-  return electricalMilesForProject(project, lookup) ?? geospatialMilesFromParcel(project, parcelCenter);
+  return electricalMilesForProject(project, lookup) ?? geospatialMilesExactFromParcel(project, parcelCenter);
 }
 
 function electricalDistanceLabel(project: Project, parcelCenter: LonLat, lookup: ElectricalDistanceLookup): string {
   const electricalMiles = electricalMilesForProject(project, lookup);
-  if (electricalMiles !== undefined) return `${formatMiles(electricalMiles)} mi`;
+  if (electricalMiles !== undefined) return `${formatMiles(roundMiles(electricalMiles))} mi`;
   if (Object.keys(lookup).length === 0) return "Calculating...";
   return `No path; ${formatMiles(geospatialMilesFromParcel(project, parcelCenter))} mi straight-line`;
 }
 
 function distanceBasisLabel(project: Project, lookup: ElectricalDistanceLookup): string {
   const estimate = lookup[project.id];
-  if (estimate?.status === "resolved" && estimate.source) return estimate.source;
+  if (estimate?.status === "resolved" && estimate.source) {
+    const details = [
+      estimate.source,
+      estimate.linePathMiles !== undefined ? `public-line path: ${formatMiles(estimate.linePathMiles)} mi` : undefined,
+      estimate.projectSnapMiles !== undefined ? `project-to-line snap: ${formatMiles(estimate.projectSnapMiles)} mi` : undefined,
+      estimate.parcelSnapMiles !== undefined ? `parcel-to-line snap: ${formatMiles(estimate.parcelSnapMiles)} mi` : undefined,
+    ].filter(Boolean);
+    return details.join("; ");
+  }
   if (Object.keys(lookup).length === 0) return "Calculating network path";
   return "Straight-line fallback";
+}
+
+function linePathDistanceLabel(project: Project, lookup: ElectricalDistanceLookup): string {
+  const value = lookup[project.id]?.linePathMiles;
+  return typeof value === "number" && Number.isFinite(value) ? `${formatMiles(value)} mi` : "Not resolved";
+}
+
+function projectSnapDistanceLabel(project: Project, lookup: ElectricalDistanceLookup): string {
+  const value = lookup[project.id]?.projectSnapMiles;
+  return typeof value === "number" && Number.isFinite(value) ? `${formatMiles(value)} mi` : "Not resolved";
 }
 
 function formatPoiVoltage(value: string | number | boolean | null | undefined): string {
@@ -298,9 +324,11 @@ function mapDataFor(
         electricalMiles: electricalMilesForProject(project, lookup) ?? "",
         geospatialMiles: geospatialMilesFromParcel(project, parcelCenter),
         generationType: project.generationType,
+        linePathMiles: lookup[project.id]?.linePathMiles ?? "",
         nearby: distanceSortMiles(project, parcelCenter, lookup) <= 300,
         poi: project.poi,
         poiVoltageKv: project.poiVoltageKv ?? 0,
+        projectSnapMiles: lookup[project.id]?.projectSnapMiles ?? "",
         queueStage: project.queueStage,
         selected: project.id === selectedId,
         status: project.status,
@@ -928,10 +956,15 @@ function estimateElectricalDistancesFromLines(
     const viaB =
       (distances.get(projectSnap.segment.bKey) ?? Infinity) + projectSnap.distanceMiles + (1 - projectSnap.fraction) * projectSnap.segment.miles;
     const electricalMiles = Math.min(viaA, viaB);
+    const linePathMiles = electricalMiles - parcelSnap.distanceMiles - projectSnap.distanceMiles;
 
     lookup[project.id] = Number.isFinite(electricalMiles)
       ? {
           electricalMiles: roundMiles(electricalMiles),
+          electricalMilesExact: electricalMiles,
+          linePathMiles: roundMiles(Math.max(0, linePathMiles)),
+          parcelSnapMiles: roundMiles(parcelSnap.distanceMiles),
+          projectSnapMiles: roundMiles(projectSnap.distanceMiles),
           snapMiles: roundMiles(parcelSnap.distanceMiles + projectSnap.distanceMiles),
           source,
           status: "resolved",
@@ -1399,7 +1432,9 @@ export default function InterconnectionPage() {
                 <p className="mt-1 text-sm text-[#66727a]">{selected.poi}</p>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <Info label="Electrical distance" value={electricalDistanceLabel(selected, activeParcelCenter, electricalDistances)} />
+                <Info label="Electrical est." value={electricalDistanceLabel(selected, activeParcelCenter, electricalDistances)} />
+                <Info label="Public-line path" value={linePathDistanceLabel(selected, electricalDistances)} />
+                <Info label="Project-line snap" value={projectSnapDistanceLabel(selected, electricalDistances)} />
                 <Info label="Straight-line" value={`${formatMiles(geospatialMilesFromParcel(selected, activeParcelCenter))} mi`} />
                 <Info label="Capacity" value={`${formatMw(selected.capacityMw)} MW`} />
                 <Info label="Stage" value={selected.queueStage} />
@@ -1461,22 +1496,23 @@ export default function InterconnectionPage() {
           <div className="border-b border-[#e5ded2] p-4">
             <h2 className="text-lg font-semibold">Nearby Active Queue Projects</h2>
             <p className="text-xs text-[#66727a]">
-              Sorted by electrical path distance where resolved, otherwise straight-line distance. Radius is 300 miles.
+              Sorted by exact electrical estimate where resolved, otherwise exact straight-line distance. Radius is 300 miles.
             </p>
             <p className="mt-1 text-xs text-[#66727a]">{electricalDistanceSummary.message}</p>
             <p className="mt-1 text-xs text-[#66727a]">
               SC MVA and SCR are point-of-interconnection grid-strength metrics from SPP study workbooks where available; they are not transformer thermal ratings.
             </p>
             <p className="mt-1 text-xs text-[#66727a]">
-              Estimated NU cost is the SPP assigned network-upgrade/interconnection cost for that queue request from the latest matched study workbook.
+              Electrical estimates include public-line path plus snap-to-line distances. Estimated NU cost is the SPP assigned network-upgrade/interconnection cost for that queue request from the latest matched study workbook.
             </p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1360px] text-left text-sm">
+            <table className="w-full min-w-[1500px] text-left text-sm">
               <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
                 <tr>
                   <th className="px-3 py-3">GI</th>
-                  <th className="px-3 py-3">Electrical mi</th>
+                  <th className="px-3 py-3">Electrical est. mi</th>
+                  <th className="px-3 py-3">Project-line snap</th>
                   <th className="px-3 py-3">Straight mi</th>
                   <th className="px-3 py-3">MW</th>
                   <th className="px-3 py-3">Type</th>
@@ -1668,6 +1704,9 @@ function NearbyProjectRow({
       <td className="px-3 py-3 font-semibold text-[#172026]">{project.id}</td>
       <td className="px-3 py-3" title={distanceBasisLabel(project, electricalDistances)}>
         {electricalDistanceLabel(project, parcelCenter, electricalDistances)}
+      </td>
+      <td className="px-3 py-3" title="Distance from queue point to nearest mapped public transmission line used by the electrical estimate.">
+        {projectSnapDistanceLabel(project, electricalDistances)}
       </td>
       <td className="px-3 py-3">{formatMiles(geospatialMilesFromParcel(project, parcelCenter))}</td>
       <td className="px-3 py-3">{formatMw(project.capacityMw)}</td>
@@ -2117,14 +2156,18 @@ function SatelliteInfrastructureMap({
           const capacityLabel = Number.isFinite(mw) && mw > 0 ? `${formatMw(mw)} MW` : "MW not listed";
           const networkCost = networkUpgradeCostsByProject[projectId];
           const electricalMiles = Number(props.electricalMiles);
+          const geospatialMiles = Number(props.geospatialMiles);
+          const projectSnapMiles = Number(props.projectSnapMiles);
           const electricalLabel =
             Number.isFinite(electricalMiles) && electricalMiles > 0
-              ? `${formatMiles(electricalMiles)} mi electrical`
+              ? `${formatMiles(roundMiles(electricalMiles))} mi electrical est.`
               : `${escapeHtml(props.geospatialMiles)} mi straight-line fallback`;
+          const straightLabel = Number.isFinite(geospatialMiles) ? `${formatMiles(geospatialMiles)} mi straight-line` : "";
+          const snapLabel = Number.isFinite(projectSnapMiles) ? `${formatMiles(projectSnapMiles)} mi project-line snap` : "";
           popupRef.current = new window.maplibregl.Popup({ closeButton: false, offset: 12 })
             .setLngLat(event.lngLat)
             .setHTML(
-              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>Est. NU cost: ${escapeHtml(networkUpgradeCostLabel(networkCost))}<br>${escapeHtml(props.queueStage)}<br>${electricalLabel} from parcel`,
+              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>Est. NU cost: ${escapeHtml(networkUpgradeCostLabel(networkCost))}<br>${escapeHtml(props.queueStage)}<br>${escapeHtml(electricalLabel)} from parcel${straightLabel ? `<br>${escapeHtml(straightLabel)}` : ""}${snapLabel ? `<br>${escapeHtml(snapLabel)}` : ""}`,
             )
             .addTo(map);
         });
