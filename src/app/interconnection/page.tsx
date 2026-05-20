@@ -334,6 +334,10 @@ function projectColor(project: Project) {
   return typeColors[project.generationType] ?? typeColors.Unknown;
 }
 
+function generationTypeLabel(type: string): string {
+  return type === "Battery/Storage" ? "BESS" : type;
+}
+
 function stageColor(stage: string) {
   const index = Math.abs(
     stage.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0),
@@ -391,7 +395,7 @@ function mapDataFor(
           fyiSourceUrl: interconnectionFyi?.sourceUrl ?? "",
           fyiStatus: interconnectionFyiStatusLabel(interconnectionFyi, project.status),
           geospatialMiles: geospatialMilesFromParcel(project, parcelCenter),
-          generationType: project.generationType,
+          generationType: generationTypeLabel(project.generationType),
           linePathMiles: lookup[project.id]?.linePathMiles ?? "",
           nearby: distanceSortMiles(project, parcelCenter, lookup) <= 300,
           ownerEntity: interconnectionFyi?.owner ?? "",
@@ -1559,7 +1563,7 @@ export default function InterconnectionPage() {
                 <Info label="Owner/entity" value={ownerEntityLabel(selectedInterconnectionFyi)} />
                 <Info label="Withdrawn date" value={withdrawnDateLabel(selectedInterconnectionFyi)} />
                 <Info label="TO" value={selected.transmissionOwner} />
-                <Info label="Type" value={selected.generationType} />
+                <Info label="Type" value={generationTypeLabel(selected.generationType)} />
                 <Info
                   label="POI last upgrade"
                   value={selectedUpgrade ? `${selectedUpgrade.lastUpgradeYear} (${selectedUpgrade.status})` : "No completed public record found"}
@@ -1741,7 +1745,10 @@ function breakdownByStage(projects: readonly Project[]) {
 
 function breakdownMwByType(projects: readonly Project[]) {
   const counts = new Map<string, number>();
-  for (const project of projects) counts.set(project.generationType, (counts.get(project.generationType) ?? 0) + project.capacityMw);
+  for (const project of projects) {
+    const label = generationTypeLabel(project.generationType);
+    counts.set(label, (counts.get(label) ?? 0) + project.capacityMw);
+  }
   return Array.from(counts, ([name, count]) => ({ name, count: roundMiles(count) })).sort((a, b) => b.count - a.count);
 }
 
@@ -1837,7 +1844,7 @@ function NearbyProjectRow({
       <td className="px-3 py-3">
         <span className="inline-flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: projectColor(project) }} />
-          {project.generationType}
+          {generationTypeLabel(project.generationType)}
         </span>
       </td>
       <td className="px-3 py-3">
@@ -2629,7 +2636,7 @@ function SatelliteInfrastructureMap({
           {visibleTypeColors.map(([type, color]) => (
             <div className="flex items-center gap-2" key={type}>
               <span className="h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: color }} />
-              <span>{type}</span>
+              <span>{generationTypeLabel(type)}</span>
             </div>
           ))}
           <div className="mb-1 mt-3 font-semibold">Existing Plants</div>
