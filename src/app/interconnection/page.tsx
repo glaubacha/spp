@@ -1563,7 +1563,7 @@ export default function InterconnectionPage() {
         />
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-5 px-6 pb-6 xl:grid-cols-[1.45fr_0.85fr]">
+      <section className="mx-auto max-w-7xl space-y-5 px-6 pb-6">
         <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-[#e5ded2] p-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1628,16 +1628,18 @@ export default function InterconnectionPage() {
           <h2 className="text-lg font-semibold">Selected Project</h2>
           {selected ? (
             <div className="mt-4 space-y-4">
-              <div>
-                <p className="text-2xl font-semibold">{selected.id}</p>
-                <p className="mt-1 text-sm text-[#66727a]">{selected.poi}</p>
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-2xl font-semibold">{selected.id}</p>
+                  <p className="mt-1 text-sm text-[#66727a]">{selected.poi}</p>
+                </div>
                 {selectedInterconnectionFyi ? (
                   <a className="mt-2 inline-block text-xs font-semibold text-[#246b8f] underline-offset-2 hover:underline" href={selectedInterconnectionFyi.sourceUrl} rel="noreferrer" target="_blank">
                     Open Interconnection.fyi record
                   </a>
                 ) : null}
               </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4 xl:grid-cols-5">
                 <Info label="Electrical est." value={electricalDistanceLabel(selected, activeParcelCenter, electricalDistances)} />
                 <Info label="Public-line path" value={linePathDistanceLabel(selected, electricalDistances)} />
                 <Info label="Project-line snap" value={projectSnapDistanceLabel(selected, electricalDistances)} />
