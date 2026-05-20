@@ -12,6 +12,7 @@ import { networkUpgradeCostsByCluster, networkUpgradeCostsByProject, type Networ
 import { sppStudyGridMetrics } from "@/data/spp-study-grid-metrics";
 import { substationMvaRatings, type SubstationMvaRating } from "@/data/substation-mva-ratings";
 import { substationUpgradeRecords, type SubstationUpgradeRecord } from "@/data/substation-upgrade-years";
+import { transmissionLineOwnerRecords, type TransmissionLineOwnerRecord } from "@/data/transmission-line-owners";
 
 type Project = (typeof interconnectionData.activeProjects)[number];
 type MapMode = "active" | "nearby";
@@ -82,6 +83,11 @@ type MapLibreFeature = {
   geometry?: LineGeometry | { type: string; coordinates?: unknown };
   layer?: { id?: string };
   properties?: Record<string, string | number | boolean | null>;
+};
+type HifldAttributes = Record<string, string | number | null>;
+type HifldFeature = {
+  attributes?: HifldAttributes;
+  geometry?: { paths?: unknown };
 };
 
 declare global {
@@ -587,6 +593,23 @@ function isUnavailableSentinel(value: string | number | boolean | null | undefin
 function cleanInfrastructureValue(value: string | number | boolean | null | undefined): string | undefined {
   if (isUnavailableSentinel(value)) return undefined;
   const cleaned = String(value).trim();
+  const normalized = cleaned.toLowerCase();
+  if (
+    [
+      "n/a",
+      "na",
+      "none",
+      "not applicable",
+      "not available",
+      "null",
+      "unavailable",
+      "unknown",
+    ].includes(normalized) ||
+    /^unknown\d*$/i.test(cleaned) ||
+    /^-+$/.test(cleaned)
+  ) {
+    return undefined;
+  }
   return cleaned === "" ? undefined : cleaned;
 }
 
@@ -750,6 +773,23 @@ function lookupSubstationUpgrade(...values: Array<string | number | boolean | nu
   return bestMatch?.record;
 }
 
+function lookupTransmissionLineOwner(...values: Array<string | number | boolean | null | undefined>): TransmissionLineOwnerRecord | undefined {
+  const haystack = normalizeLookupText(values.map((value) => cleanInfrastructureValue(value)).filter(Boolean).join(" "));
+  if (!haystack) return undefined;
+
+  let bestMatch: { record: TransmissionLineOwnerRecord; score: number } | undefined;
+  for (const record of transmissionLineOwnerRecords) {
+    for (const alias of [record.lineName, ...record.aliases]) {
+      const normalizedAlias = normalizeLookupText(alias);
+      if (!normalizedAlias || !haystack.includes(normalizedAlias)) continue;
+      const score = normalizedAlias.length;
+      if (!bestMatch || score > bestMatch.score) bestMatch = { record, score };
+    }
+  }
+
+  return bestMatch?.record;
+}
+
 function mvaRatingValue(
   properties: Record<string, string | number | boolean | null> | undefined,
   documentedRating?: SubstationMvaRating,
@@ -810,7 +850,7 @@ function hifldUrl(kind: "line" | "substation", lng: number, lat: number): string
       : "https://services2.arcgis.com/6VIt2tukGNSxkmi6/arcgis/rest/services/DEMO_Substations/FeatureServer/8/query";
   const outFields =
     kind === "line"
-      ? "ID,TYPE,STATUS,SOURCE,SOURCEDATE,VAL_METHOD,VAL_DATE,OWNER,VOLTAGE,VOLT_CLASS,INFERRED,SUB_1,SUB_2"
+      ? "ID,TYPE,STATUS,SOURCE,SOURCEDATE,VAL_METHOD,VAL_DATE,OWNER,VOLTAGE,VOLT_CLASS,INFERRED,SUB_1,SUB_2,NAICS_DESC"
       : "ID,NAME,TYPE,STATUS,SOURCE,SOURCEDATE,VAL_METHOD,VAL_DATE,LINES,MAX_VOLT,MIN_VOLT,MAX_INFER,MIN_INFER";
   const params = new URLSearchParams({
     distance: kind === "line" ? "1500" : "5000",
@@ -819,7 +859,9 @@ function hifldUrl(kind: "line" | "substation", lng: number, lat: number): string
     geometryType: "esriGeometryPoint",
     inSR: "4326",
     outFields,
-    returnGeometry: "false",
+    outSR: "4326",
+    resultRecordCount: kind === "line" ? "8" : "1",
+    returnGeometry: kind === "line" ? "true" : "false",
     spatialRel: "esriSpatialRelIntersects",
     units: "esriSRUnit_Meter",
     where: "1=1",
@@ -831,8 +873,21 @@ function hifldUrl(kind: "line" | "substation", lng: number, lat: number): string
 async function fetchHifldAttributes(kind: "line" | "substation", lng: number, lat: number) {
   const response = await fetch(hifldUrl(kind, lng, lat));
   if (!response.ok) return undefined;
-  const data = (await response.json()) as { features?: Array<{ attributes?: Record<string, string | number | null> }> };
-  return data.features?.[0]?.attributes;
+  const data = (await response.json()) as { features?: HifldFeature[] };
+  const features = data.features ?? [];
+  if (kind !== "line") return features[0]?.attributes;
+
+  const point = { lat, lon: lng };
+  return (
+    features
+      .map((feature, index) => ({
+        attributes: feature.attributes,
+        distanceMiles: distanceMilesToHifldLine(point, feature),
+        index,
+      }))
+      .filter((feature) => feature.attributes)
+      .sort((a, b) => a.distanceMiles - b.distanceMiles || a.index - b.index)[0]?.attributes
+  );
 }
 
 function boundsAroundPoint(center: LonLat, radiusMiles: number): [[number, number], [number, number]] {
@@ -858,6 +913,49 @@ function isCoordinate(value: unknown): value is [number, number] {
 function coordinatesFromUnknownLine(line: unknown): Array<[number, number]> {
   if (!Array.isArray(line)) return [];
   return line.filter(isCoordinate).map(([lon, lat]) => [lon, lat] as [number, number]);
+}
+
+function distanceMilesToLineCoordinates(point: LonLat, coordinates: Array<[number, number]>): number {
+  let best = Infinity;
+
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const previous = coordinates[index - 1];
+    const current = coordinates[index];
+    if (!isCoordinate(previous) || !isCoordinate(current)) continue;
+
+    const a = { lat: previous[1], lon: previous[0] };
+    const b = { lat: current[1], lon: current[0] };
+    const referenceLat = ((point.lat + a.lat + b.lat) / 3) * (Math.PI / 180);
+    const xScale = 69 * Math.cos(referenceLat);
+    const yScale = 69;
+    const ax = a.lon * xScale;
+    const ay = a.lat * yScale;
+    const bx = b.lon * xScale;
+    const by = b.lat * yScale;
+    const px = point.lon * xScale;
+    const py = point.lat * yScale;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSquared = dx * dx + dy * dy;
+    const fraction = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
+    const closestX = ax + dx * fraction;
+    const closestY = ay + dy * fraction;
+    const distanceMiles = Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2);
+    if (distanceMiles < best) best = distanceMiles;
+  }
+
+  return best;
+}
+
+function distanceMilesToHifldLine(point: LonLat, feature: HifldFeature): number {
+  const paths = feature.geometry?.paths;
+  if (!Array.isArray(paths)) return Infinity;
+
+  return paths.reduce((best, path) => {
+    const coordinates = coordinatesFromUnknownLine(path);
+    if (coordinates.length < 2) return best;
+    return Math.min(best, distanceMilesToLineCoordinates(point, coordinates));
+  }, Infinity);
 }
 
 async function fetchHifldTransmissionLineStrings(center: LonLat): Promise<Array<Array<[number, number]>>> {
@@ -1415,7 +1513,7 @@ async function parseKmlOrKmzFile(file: File): Promise<LocatorFeatureCollection> 
 function infrastructurePopupHtml(
   layerId: string,
   properties: Record<string, string | number | boolean | null> | undefined,
-  hifld?: Record<string, string | number | null>,
+  hifld?: HifldAttributes,
 ): string | null {
   const isLine = layerId.includes("line");
   const isSubstation = layerId.includes("substation");
@@ -1428,8 +1526,32 @@ function infrastructurePopupHtml(
   const hifldVoltage = isLine
     ? cleanInfrastructureValue(hifld?.VOLTAGE)
     : joinedAvailableInfrastructureValues(hifld?.MAX_VOLT, hifld?.MIN_VOLT);
+  const hifldEndpoints = isLine
+    ? [cleanInfrastructureValue(hifld?.SUB_1), cleanInfrastructureValue(hifld?.SUB_2)].filter((value): value is string =>
+        Boolean(value),
+      )
+    : [];
+  const lineEndpointLabel =
+    hifldEndpoints.length >= 2
+      ? `${hifldEndpoints[0]} - ${hifldEndpoints[1]}`
+      : hifldEndpoints.length === 1
+        ? hifldEndpoints[0]
+        : undefined;
+  const documentedLineOwner = isLine
+    ? lookupTransmissionLineOwner(
+        lineEndpointLabel,
+        title,
+        properties?.name,
+        properties?.ref,
+        properties?.operator,
+        properties?.owner,
+        hifld?.ID,
+        hifld?.SOURCE,
+      )
+    : undefined;
   const displayName = firstAvailableInfrastructureValue(
-    isSubstation ? hifld?.NAME : undefined,
+    documentedLineOwner?.lineName,
+    isSubstation ? hifld?.NAME : lineEndpointLabel,
     title,
     properties?.name,
     properties?.ref,
@@ -1455,17 +1577,31 @@ function infrastructurePopupHtml(
     hifld?.ID,
   );
   const mva = mvaRatingValue(properties, documentedMva);
-  const operator = firstAvailableInfrastructureValue(hifld?.OWNER, properties?.operator, properties?.owner);
+  const owner = isLine
+    ? firstAvailableInfrastructureValue(documentedLineOwner?.owner, hifld?.OWNER, properties?.owner)
+    : firstAvailableInfrastructureValue(properties?.owner, hifld?.OWNER);
+  const operator = isLine
+    ? firstAvailableInfrastructureValue(
+        documentedLineOwner?.operator,
+        properties?.operator,
+        properties?.["operator:name"],
+        properties?.["operator:short"],
+      )
+    : firstAvailableInfrastructureValue(properties?.operator, properties?.owner, hifld?.OWNER);
+  const assetType = firstAvailableInfrastructureValue(hifld?.TYPE, properties?.type);
   const status = firstAvailableInfrastructureValue(hifld?.STATUS, properties?.status);
   const usefulRows = [
     !isUnavailableLabel(displayName) ? ["Name", displayName] : undefined,
+    isLine && lineEndpointLabel && lineEndpointLabel !== displayName ? ["Terminals", lineEndpointLabel] : undefined,
     !isUnavailableLabel(voltage) ? ["Voltage", voltage] : undefined,
+    !isUnavailableLabel(owner) ? ["Owner", owner] : undefined,
+    !isUnavailableLabel(operator) && operator !== owner ? ["Operator", operator] : undefined,
     !isUnavailableLabel(built) ? ["Built", built] : undefined,
     documentedUpgrade ? ["Last upgraded", `${documentedUpgrade.lastUpgradeYear} (${documentedUpgrade.status})`] : undefined,
     documentedUpgrade ? ["Upgrade record", documentedUpgrade.upgradeName] : undefined,
     mva.type !== "Not available" ? ["MVA rating", mva.label] : undefined,
     mva.type !== "Not available" ? ["Rating type", mva.type] : undefined,
-    !isUnavailableLabel(operator) ? ["Operator", operator] : undefined,
+    !isUnavailableLabel(assetType) ? ["Type", assetType] : undefined,
     !isUnavailableLabel(status) ? ["Status", status] : undefined,
   ].filter((row): row is [string, string] => Boolean(row));
 
