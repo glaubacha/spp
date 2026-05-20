@@ -54,6 +54,23 @@ type GeoJsonFeatureCollection = {
     properties: Record<string, string | number | boolean>;
   }>;
 };
+type LineFeatureCollection = {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    geometry:
+      | {
+          type: "LineString";
+          coordinates: Array<[number, number]>;
+        }
+      | {
+          type: "MultiLineString";
+          coordinates: Array<Array<[number, number]>>;
+        };
+    properties: Record<string, string | number | boolean | null>;
+  }>;
+};
+type GeoJsonSourcePayload = string | GeoJsonFeatureCollection | LineFeatureCollection | LocatorFeatureCollection;
 type LocatorFeatureCollection = {
   type: "FeatureCollection";
   features: Array<{
@@ -109,7 +126,7 @@ type MapLibreMap = {
   getCanvas: () => HTMLCanvasElement;
   getLayer: (id: string) => unknown;
   getZoom?: () => number;
-  getSource: (id: string) => { setData?: (data: GeoJsonFeatureCollection | LocatorFeatureCollection) => void } | undefined;
+  getSource: (id: string) => { setData?: (data: GeoJsonSourcePayload) => void } | undefined;
   isStyleLoaded: () => boolean;
   on: (event: string, layerOrHandler: string | ((event?: MapLibreEvent) => void), handler?: (event: MapLibreEvent) => void) => void;
   queryRenderedFeatures: (
@@ -149,6 +166,7 @@ const typeColors: Record<string, string> = {
 
 const assetColors = {
   existingPlant: "#f8fafc",
+  gasPipeline: "#ffb703",
   parcel: "#b71c1c",
   powerLine: "#00e5ff",
   substation: "#39ff14",
@@ -169,6 +187,17 @@ const existingPowerPlantLayerIds = [
   "existing-power-plant-hit-area",
   "existing-power-plants",
 ];
+const emptyLineFeatureCollection: LineFeatureCollection = { type: "FeatureCollection", features: [] };
+const emptyPointFeatureCollection: GeoJsonFeatureCollection = { type: "FeatureCollection", features: [] };
+const gasPipelines = {
+  dataRadiusMiles: 300,
+  endpoint:
+    "https://arcgis.netl.doe.gov/server/rest/services/Hosted/Natural_Gas_Pipelines/FeatureServer/10/query",
+  sourceName: "HIFLD / NETL Natural Gas Pipelines",
+  sourceUrl: "https://arcgis.netl.doe.gov/server/rest/services/Hosted/Natural_Gas_Pipelines/FeatureServer/10",
+};
+const gasPipelineSourceId = "gas-pipeline-source";
+const gasPipelineLayerIds = ["gas-pipeline-casing", "gas-pipelines", "gas-pipeline-hit-area"];
 
 const existingPlantFuelColors = {
   biomass: "#84cc16",
@@ -956,6 +985,112 @@ function distanceMilesToHifldLine(point: LonLat, feature: HifldFeature): number 
     if (coordinates.length < 2) return best;
     return Math.min(best, distanceMilesToLineCoordinates(point, coordinates));
   }, Infinity);
+}
+
+function gasPipelinePopupHtml(properties: Record<string, string | number | boolean | null> | undefined): string {
+  const operator = firstAvailableInfrastructureValue(properties?.operator);
+  const type = firstAvailableInfrastructureValue(properties?.typepipe);
+  const status = firstAvailableInfrastructureValue(properties?.status);
+  const distanceMiles = Number(properties?.distanceMiles);
+  const lineLengthMiles = Number(properties?.lineLengthMiles);
+  const distanceLabel = Number.isFinite(distanceMiles) ? `${formatMiles(distanceMiles)} mi` : "Not available in source";
+  const lengthLabel = Number.isFinite(lineLengthMiles) ? `${formatMiles(lineLengthMiles)} mi` : "Not available in source";
+  const rows = [
+    ["Feature", "Natural gas pipeline"],
+    !isUnavailableLabel(type) ? ["Pipeline type", type] : undefined,
+    !isUnavailableLabel(operator) ? ["Owner / operator", operator] : undefined,
+    !isUnavailableLabel(status) ? ["Status", status] : undefined,
+    ["Distance to parcel", distanceLabel],
+    !isUnavailableLabel(lengthLabel) ? ["Mapped segment", lengthLabel] : undefined,
+    ["Source", gasPipelines.sourceName],
+  ].filter((row): row is [string, string] => Boolean(row));
+
+  return `
+    <div style="font-size:12px;line-height:1.45;min-width:230px">
+      <strong style="display:block;font-size:13px;margin-bottom:6px">${escapeHtml(operator === "Not available in source" ? "Natural gas pipeline" : operator)}</strong>
+      ${rows
+        .map(
+          ([label, value]) =>
+            `<div style="display:grid;grid-template-columns:96px 1fr;gap:8px"><span style="color:#64748b">${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+async function fetchGasPipelineFeatureCollection(center: LonLat): Promise<LineFeatureCollection> {
+  const pageSize = 2000;
+  const maxPages = 8;
+  const features: LineFeatureCollection["features"] = [];
+  const seen = new Set<string>();
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const params = new URLSearchParams({
+      distance: String(Math.round(gasPipelines.dataRadiusMiles * 1609.344)),
+      f: "json",
+      geometry: `${center.lon},${center.lat}`,
+      geometryType: "esriGeometryPoint",
+      inSR: "4326",
+      orderByFields: "objectid",
+      outFields: "objectid,typepipe,operator,shape__len,shape_leng",
+      outSR: "4326",
+      resultOffset: String(page * pageSize),
+      resultRecordCount: String(pageSize),
+      returnGeometry: "true",
+      spatialRel: "esriSpatialRelIntersects",
+      units: "esriSRUnit_Meter",
+      where: "1=1",
+    });
+    const response = await fetch(`${gasPipelines.endpoint}?${params.toString()}`);
+    if (!response.ok) throw new Error("Could not load natural gas pipeline geometry.");
+    const data = (await response.json()) as {
+      exceededTransferLimit?: boolean;
+      features?: Array<{
+        attributes?: Record<string, string | number | null>;
+        geometry?: { paths?: unknown };
+      }>;
+    };
+    const arcgisFeatures = data.features ?? [];
+
+    for (const feature of arcgisFeatures) {
+      const attributes = feature.attributes ?? {};
+      const id = cleanInfrastructureValue(attributes.objectid) ?? `${page}-${features.length}`;
+      if (seen.has(id)) continue;
+      const paths = Array.isArray(feature.geometry?.paths) ? feature.geometry?.paths ?? [] : [];
+      const coordinates = paths
+        .map(coordinatesFromUnknownLine)
+        .filter((path) => path.length > 1);
+      if (coordinates.length === 0) continue;
+      seen.add(id);
+
+      const distanceMiles = coordinates.reduce(
+        (best, path) => Math.min(best, distanceMilesToLineCoordinates(center, path)),
+        Infinity,
+      );
+      const lengthMeters = Number(attributes.shape__len);
+      const lineLengthMiles = Number.isFinite(lengthMeters) && lengthMeters > 0 ? lengthMeters / 1609.344 : undefined;
+      features.push({
+        type: "Feature",
+        geometry:
+          coordinates.length === 1
+            ? { type: "LineString", coordinates: coordinates[0] }
+            : { type: "MultiLineString", coordinates },
+        properties: {
+          distanceMiles: Number.isFinite(distanceMiles) ? roundMiles(distanceMiles) : null,
+          lineLengthMiles: lineLengthMiles ? roundMiles(lineLengthMiles) : null,
+          objectid: id,
+          operator: firstAvailableInfrastructureValue(attributes.operator),
+          status: firstAvailableInfrastructureValue(attributes.status),
+          typepipe: firstAvailableInfrastructureValue(attributes.typepipe),
+        },
+      });
+    }
+
+    if (!data.exceededTransferLimit && arcgisFeatures.length < pageSize) break;
+  }
+
+  features.sort((a, b) => Number(a.properties.distanceMiles ?? Infinity) - Number(b.properties.distanceMiles ?? Infinity));
+  return { type: "FeatureCollection", features };
 }
 
 async function fetchHifldTransmissionLineStrings(center: LonLat): Promise<Array<Array<[number, number]>>> {
@@ -2297,18 +2432,23 @@ function SatelliteInfrastructureMap({
 }) {
   const [coordinateInput, setCoordinateInput] = useState("");
   const [locatorMessage, setLocatorMessage] = useState("Enter coordinates or upload KML/KMZ to make it the active parcel.");
+  const [gasPipelineCount, setGasPipelineCount] = useState(0);
+  const [gasPipelineMessage, setGasPipelineMessage] = useState("Natural gas pipelines load from HIFLD/NETL after the map loads.");
   const [showExistingPlants, setShowExistingPlants] = useState(true);
+  const [showGasPipelines, setShowGasPipelines] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const popupRef = useRef<MapLibrePopup | null>(null);
   const currentParcelBoundsRef = useRef<[[number, number], [number, number]] | undefined>(locatorBounds(initialParcelData()));
   const showExistingPlantsRef = useRef(showExistingPlants);
+  const showGasPipelinesRef = useRef(showGasPipelines);
   const selectedIdRef = useRef(selectedId);
   const projectsRef = useRef(projects);
   const activeParcelCenterRef = useRef(activeParcelCenter);
   const electricalDistancesRef = useRef(electricalDistances);
   const distanceRequestRef = useRef(0);
-  const hifldCacheRef = useRef<Map<string, Record<string, string | number | null> | undefined>>(new Map());
+  const gasPipelineRequestRef = useRef(0);
+  const hifldCacheRef = useRef<Map<string, HifldAttributes | undefined>>(new Map());
   const hoverKeyRef = useRef("");
   const visibleTypeColors = useMemo(() => {
     const visibleTypes = new Set<string>(projects.map((project) => project.generationType));
@@ -2345,6 +2485,36 @@ function SatelliteInfrastructureMap({
       });
   };
 
+  const setLayerVisibility = (layerIds: string[], visible: boolean) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const visibility = visible ? "visible" : "none";
+    for (const layerId of layerIds) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+    }
+  };
+
+  const refreshGasPipelines = (map: MapLibreMap | null, parcelCenter: LonLat) => {
+    const requestId = gasPipelineRequestRef.current + 1;
+    gasPipelineRequestRef.current = requestId;
+    setGasPipelineMessage(`Loading natural gas pipelines within ${gasPipelines.dataRadiusMiles} miles of the active parcel...`);
+    void fetchGasPipelineFeatureCollection(parcelCenter)
+      .then((data) => {
+        if (gasPipelineRequestRef.current !== requestId) return;
+        setGasPipelineCount(data.features.length);
+        setGasPipelineMessage(
+          `Loaded ${data.features.length} natural gas pipeline segments within ${gasPipelines.dataRadiusMiles} miles of the active parcel.`,
+        );
+        map?.getSource(gasPipelineSourceId)?.setData?.(data);
+      })
+      .catch(() => {
+        if (gasPipelineRequestRef.current !== requestId) return;
+        setGasPipelineCount(0);
+        setGasPipelineMessage("Natural gas pipelines could not be loaded from the public HIFLD/NETL service.");
+        map?.getSource(gasPipelineSourceId)?.setData?.(emptyLineFeatureCollection);
+      });
+  };
+
   const applyLocatorData = (data: LocatorFeatureCollection, message: string) => {
     mapRef.current?.getSource("parcel")?.setData?.(parcelPolygonData(data));
     mapRef.current?.getSource("parcel-center")?.setData?.(parcelCenterData(data));
@@ -2355,6 +2525,7 @@ function SatelliteInfrastructureMap({
     if (bounds) currentParcelBoundsRef.current = bounds;
     if (bounds) mapRef.current?.fitBounds(bounds, { padding: 96, duration: 900 });
     refreshElectricalDistances(mapRef.current, center);
+    refreshGasPipelines(mapRef.current, center);
     setLocatorMessage(`${message} This is now the active parcel on the map.`);
   };
 
@@ -2389,11 +2560,14 @@ function SatelliteInfrastructureMap({
     showExistingPlantsRef.current = showExistingPlants;
     const map = mapRef.current;
     if (!map) return;
-    const visibility = showExistingPlants ? "visible" : "none";
-    for (const layerId of existingPowerPlantLayerIds) {
-      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
-    }
+    setLayerVisibility(existingPowerPlantLayerIds, showExistingPlants);
+    map.getSource(existingPowerPlantSourceId)?.setData?.(showExistingPlants ? existingPowerPlants.dataUrl : emptyPointFeatureCollection);
   }, [showExistingPlants]);
+
+  useEffect(() => {
+    showGasPipelinesRef.current = showGasPipelines;
+    setLayerVisibility(gasPipelineLayerIds, showGasPipelines);
+  }, [showGasPipelines]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2702,6 +2876,47 @@ function SatelliteInfrastructureMap({
           },
         });
 
+        map.addSource(gasPipelineSourceId, {
+          type: "geojson",
+          data: emptyLineFeatureCollection,
+          attribution: `Natural gas pipelines © <a href="${gasPipelines.sourceUrl}">${gasPipelines.sourceName}</a>`,
+        });
+        map.addLayer({
+          id: "gas-pipeline-casing",
+          type: "line",
+          source: gasPipelineSourceId,
+          layout: { visibility: showGasPipelinesRef.current ? "visible" : "none" },
+          paint: {
+            "line-color": "#111827",
+            "line-opacity": 0.78,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.6, 9, 3.4, 14, 6],
+          },
+        });
+        map.addLayer({
+          id: "gas-pipelines",
+          type: "line",
+          source: gasPipelineSourceId,
+          layout: { visibility: showGasPipelinesRef.current ? "visible" : "none" },
+          paint: {
+            "line-color": assetColors.gasPipeline,
+            "line-dasharray": [1.5, 1],
+            "line-opacity": 0.94,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 0.8, 9, 2, 14, 3.8],
+          },
+        });
+        map.addLayer({
+          id: "gas-pipeline-hit-area",
+          type: "line",
+          source: gasPipelineSourceId,
+          layout: { visibility: showGasPipelinesRef.current ? "visible" : "none" },
+          paint: {
+            "line-color": "rgba(255,255,255,0.01)",
+            "line-opacity": 0.01,
+            "line-width": ["interpolate", ["linear"], ["zoom"], 4, 8, 9, 12, 14, 18],
+          },
+        });
+        refreshGasPipelines(map, activeParcelCenterRef.current);
+
         map.addSource("queue-projects", {
           type: "geojson",
           data: mapDataFor(
@@ -2822,6 +3037,7 @@ function SatelliteInfrastructureMap({
           return nearbyPlants.find((feature) => feature.properties?.plantId) ?? event.features?.[0];
         };
         const showExistingPlantPopup = (event: MapLibreEvent, closeOnClick = false) => {
+          if (!showExistingPlantsRef.current) return;
           if (!map || !event.features?.[0]) return;
           if (event.point) {
             const nearQueueProject = map.queryRenderedFeatures(
@@ -2854,6 +3070,10 @@ function SatelliteInfrastructureMap({
 
         map.on("mousemove", "existing-power-plant-hit-area", (event) => {
           if (!map) return;
+          if (!showExistingPlantsRef.current) {
+            plantHoverPopup.remove();
+            return;
+          }
           map.getCanvas().style.cursor = "help";
           showExistingPlantPopup(event);
         });
@@ -2864,6 +3084,23 @@ function SatelliteInfrastructureMap({
         map.on("click", "existing-power-plants", (event) => {
           showExistingPlantPopup(event, true);
         });
+
+        const gasPipelinePopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+        const showGasPipelinePopup = (event: MapLibreEvent) => {
+          if (!map || !showGasPipelinesRef.current || !event.features?.[0]?.properties) return;
+          map.getCanvas().style.cursor = "help";
+          gasPipelinePopup
+            .setLngLat(event.lngLat)
+            .setHTML(gasPipelinePopupHtml(event.features[0].properties))
+            .addTo(map);
+        };
+        for (const layer of ["gas-pipeline-hit-area", "gas-pipelines"]) {
+          map.on("mousemove", layer, showGasPipelinePopup);
+          map.on("mouseleave", layer, () => {
+            if (map) map.getCanvas().style.cursor = "";
+            gasPipelinePopup.remove();
+          });
+        }
 
         const infrastructureLayers = [
           "power-line",
@@ -2894,7 +3131,7 @@ function SatelliteInfrastructureMap({
                 { layers: ["existing-power-plants", "existing-power-plant-hit-area"] },
               );
               const plantFeature = nearbyExistingPlant.find((feature) => feature.properties?.plantId);
-              if (plantFeature?.properties) {
+              if (showExistingPlantsRef.current && plantFeature?.properties) {
                 hoverPopup.remove();
                 map.getCanvas().style.cursor = "help";
                 plantHoverPopup
@@ -3033,11 +3270,12 @@ function SatelliteInfrastructureMap({
         <div className="space-y-1 text-xs leading-5 text-[#66727a] lg:col-span-3">
           <p>{locatorMessage}</p>
           <p>{electricalDistanceSummary}</p>
+          <p>{gasPipelineMessage}</p>
         </div>
       </div>
       <div className="relative bg-[#111827] p-3">
         <div className="h-[34rem] w-full overflow-hidden rounded-md" ref={containerRef} />
-        <div className="absolute right-5 top-16 z-10 rounded-md border border-white/25 bg-black/70 px-3 py-2 text-xs text-white shadow-lg">
+        <div className="absolute right-5 top-16 z-10 space-y-2 rounded-md border border-white/25 bg-black/70 px-3 py-2 text-xs text-white shadow-lg">
           <label className="flex items-center gap-2">
             <input
               checked={showExistingPlants}
@@ -3048,6 +3286,16 @@ function SatelliteInfrastructureMap({
             <span className="font-semibold">Existing plants</span>
             <span className="text-white/70">15,528</span>
           </label>
+          <label className="flex items-center gap-2">
+            <input
+              checked={showGasPipelines}
+              className="h-4 w-4 accent-[#ffb703]"
+              onChange={(event) => setShowGasPipelines(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="font-semibold">Gas pipelines</span>
+            <span className="text-white/70">{gasPipelineCount}</span>
+          </label>
         </div>
         <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[17rem] rounded border border-white/20 bg-black/65 p-2 text-[0.65rem] leading-4 text-white shadow-lg">
           <div className="mb-0.5 font-semibold">SPP Queue Projects</div>
@@ -3057,20 +3305,30 @@ function SatelliteInfrastructureMap({
               <span>{generationTypeLabel(type)}</span>
             </div>
           ))}
-          <div className="mb-0.5 mt-2 font-semibold">Existing Plants</div>
-          <div className="grid grid-cols-2 gap-x-2">
-            {existingPlantFuelLegend.map((item) => (
-              <div className="flex items-center gap-1.5" key={item.label}>
-                <span className="h-2 w-2 rounded-full border border-[#111827]" style={{ background: item.color }} />
-                <span>{item.label}</span>
+          {showExistingPlants ? (
+            <>
+              <div className="mb-0.5 mt-2 font-semibold">Existing Plants</div>
+              <div className="grid grid-cols-2 gap-x-2">
+                {existingPlantFuelLegend.map((item) => (
+                  <div className="flex items-center gap-1.5" key={item.label}>
+                    <span className="h-2 w-2 rounded-full border border-[#111827]" style={{ background: item.color }} />
+                    <span>{item.label}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : null}
           <div className="mb-0.5 mt-2 font-semibold">Map Assets</div>
           <div className="flex items-center gap-1.5">
             <span className="h-0.5 w-4 rounded-full" style={{ background: assetColors.powerLine }} />
             <span>Power line</span>
           </div>
+          {showGasPipelines ? (
+            <div className="flex items-center gap-1.5">
+              <span className="h-0.5 w-4 rounded-full border-t border-dashed border-[#111827]" style={{ background: assetColors.gasPipeline }} />
+              <span>Gas pipeline</span>
+            </div>
+          ) : null}
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm border border-black" style={{ background: assetColors.substation }} />
             <span>Substation</span>

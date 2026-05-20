@@ -11,6 +11,24 @@ export type TransmissionLineOwnerRecord = {
 export const transmissionLineOwnerRecords: TransmissionLineOwnerRecord[] = [
   {
     aliases: [
+      "hitchland beaver county",
+      "beaver county hitchland",
+      "hitchland - beaver county",
+      "beaver county - hitchland",
+      "unknown157432 hitchland",
+      "hitchland unknown157432",
+      "hitchland to beaver county",
+    ],
+    lineName: "Hitchland - Beaver County 345 kV (Xcel/SPS portion)",
+    operator: "Southwestern Public Service Company (SPS / Xcel Energy)",
+    owner: "Southwestern Public Service Company (SPS / Xcel Energy)",
+    sourceDetail:
+      "Xcel states that its portion of the Hitchland-Woodward 345 kV project runs from the Hitchland Substation to Beaver County, Oklahoma.",
+    sourceTitle: "Xcel Energy Power for the Plains project page",
+    sourceUrl: "https://www.powerfortheplains.com/Projects/Hitchland%E2%80%93Woodward-345-kV-Transmission-Line",
+  },
+  {
+    aliases: [
       "finney hitchland",
       "hitchland finney",
       "finney - hitchland",
