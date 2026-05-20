@@ -169,7 +169,7 @@ const existingPlantFuelLegend = [
   { color: "#38d996", label: "Existing wind" },
   { color: "#38bdf8", label: "Existing hydro" },
   { color: "#a78bfa", label: "Existing storage" },
-  { color: "#fb7185", label: "Existing gas (pink)" },
+  { color: "#fb7185", label: "Existing gas" },
   { color: "#64748b", label: "Existing coal" },
   { color: "#84cc16", label: "Existing biomass/waste" },
   { color: "#f8fafc", label: "Other existing plants" },
