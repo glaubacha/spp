@@ -143,7 +143,6 @@ const typeColors: Record<string, string> = {
 
 const assetColors = {
   existingPlant: "#f8fafc",
-  generator: "#ff2d8d",
   parcel: "#b71c1c",
   powerLine: "#00e5ff",
   substation: "#39ff14",
@@ -2348,30 +2347,6 @@ function SatelliteInfrastructureMap({
                 "circle-stroke-width": 2,
               },
             },
-            {
-              id: "power-plants",
-              type: "fill",
-              source: "power",
-              "source-layer": "power_plant",
-              paint: {
-                "fill-color": assetColors.generator,
-                "fill-opacity": 0.34,
-                "fill-outline-color": "#ffffff",
-              },
-            },
-            {
-              id: "generators",
-              type: "circle",
-              source: "power",
-              "source-layer": "power_generator",
-              paint: {
-                "circle-color": assetColors.generator,
-                "circle-opacity": 0.82,
-                "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 1.5, 12, 4, 16, 7],
-                "circle-stroke-color": "#ffffff",
-                "circle-stroke-width": 1,
-              },
-            },
           ],
         },
         zoom: 6,
@@ -2691,8 +2666,6 @@ function SatelliteInfrastructureMap({
           "power-line",
           "power-substations",
           "power-substation-points",
-          "power-plants",
-          "generators",
         ];
         const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
         for (const layer of infrastructureLayers) {
@@ -2866,10 +2839,6 @@ function SatelliteInfrastructureMap({
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm border border-black" style={{ background: assetColors.substation }} />
             <span>Substation</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm border border-white" style={{ background: assetColors.generator }} />
-            <span>OpenInfraMap plant/generator</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full border border-white" style={{ background: assetColors.parcel }} />
