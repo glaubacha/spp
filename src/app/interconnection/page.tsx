@@ -1561,7 +1561,6 @@ export default function InterconnectionPage() {
           value={formatUsd(nearbyNetworkCostSummary.knownCostUsd)}
           detail={`${nearbyNetworkCostSummary.knownCount}/${visibleNearbyProjects.length} source-backed${nearbyNetworkCostSummary.tbdCount ? `, ${nearbyNetworkCostSummary.tbdCount} TBD` : ""}`}
         />
-        <Metric label="Decoded rows" value={interconnectionData.stats.totalDecodedProjects.toString()} detail="PowerBI queue projects" />
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-5 px-6 pb-6 xl:grid-cols-[1.45fr_0.85fr]">
