@@ -85,9 +85,11 @@ type MapLibreMap = {
   addControl: (control: unknown, position?: string) => void;
   addLayer: (layer: Record<string, unknown>) => void;
   addSource: (id: string, source: Record<string, unknown>) => void;
+  easeTo?: (options?: Record<string, unknown>) => void;
   fitBounds: (bounds: [[number, number], [number, number]], options?: Record<string, unknown>) => void;
   getCanvas: () => HTMLCanvasElement;
   getLayer: (id: string) => unknown;
+  getZoom?: () => number;
   getSource: (id: string) => { setData?: (data: GeoJsonFeatureCollection | LocatorFeatureCollection) => void } | undefined;
   isStyleLoaded: () => boolean;
   on: (event: string, layerOrHandler: string | ((event?: MapLibreEvent) => void), handler?: (event: MapLibreEvent) => void) => void;
@@ -127,11 +129,39 @@ const typeColors: Record<string, string> = {
 };
 
 const assetColors = {
+  existingPlant: "#f8fafc",
   generator: "#ff2d8d",
   parcel: "#b71c1c",
   powerLine: "#00e5ff",
   substation: "#39ff14",
 };
+
+const existingPowerPlants = {
+  count: 15528,
+  dataUrl: "/data/powerplantsinfo-plants.geojson",
+  sourceName: "PowerPlantsInfo.org",
+  sourceUrl: "https://www.powerplantsinfo.org/",
+  sourceUpdated: "2026-04-26",
+};
+
+const existingPowerPlantSourceId = "existing-power-plant-source";
+const existingPowerPlantLayerIds = [
+  "existing-power-plant-clusters",
+  "existing-power-plant-cluster-count",
+  "existing-power-plant-hit-area",
+  "existing-power-plants",
+];
+
+const existingPlantFuelLegend = [
+  { color: "#ffd166", label: "Existing solar" },
+  { color: "#38d996", label: "Existing wind" },
+  { color: "#38bdf8", label: "Existing hydro" },
+  { color: "#a78bfa", label: "Existing storage" },
+  { color: "#fb7185", label: "Existing gas" },
+  { color: "#64748b", label: "Existing coal" },
+  { color: "#84cc16", label: "Existing biomass/waste" },
+  { color: "#f8fafc", label: "Other existing plants" },
+];
 
 const stageColors = ["#2f4858", "#e4572e", "#17bebb", "#ffc914", "#6a4c93", "#76b041"];
 const defaultParcelCenter: LonLat = {
@@ -336,6 +366,40 @@ function mapDataFor(
       },
     })),
   };
+}
+
+function existingPlantNumberLabel(value: string | number | boolean | null | undefined, suffix = ""): string {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return "Not listed";
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)}${suffix}`;
+}
+
+function existingPlantPopupHtml(properties: Record<string, string | number | boolean | null> | undefined): string {
+  const name = firstAvailableInfrastructureValue(properties?.name);
+  const fuel = firstAvailableInfrastructureValue(properties?.fuel);
+  const capacity = existingPlantNumberLabel(properties?.capacityMw, " MW");
+  const owner = firstAvailableInfrastructureValue(properties?.owner);
+  const location = [properties?.county, properties?.state].map(cleanInfrastructureValue).filter(Boolean).join(", ");
+  const year = firstAvailableInfrastructureValue(properties?.operatingYear);
+  const status = firstAvailableInfrastructureValue(properties?.status);
+  const gridRegion = firstAvailableInfrastructureValue(properties?.gridRegion);
+  const slug = cleanInfrastructureValue(properties?.slug);
+  const sourceLink = slug
+    ? `<br><a href="https://www.powerplantsinfo.org/plant/${escapeHtml(slug)}" target="_blank" rel="noreferrer">Open PowerPlantsInfo record</a>`
+    : "";
+
+  return [
+    `<strong>${escapeHtml(name)}</strong>`,
+    `Existing power plant | ${escapeHtml(fuel)} | ${escapeHtml(capacity)}`,
+    location ? escapeHtml(location) : undefined,
+    `Owner: ${escapeHtml(owner)}`,
+    `Operating year: ${escapeHtml(year)}`,
+    `Status: ${escapeHtml(status)}`,
+    `Grid region: ${escapeHtml(gridRegion)}`,
+    `Source: ${escapeHtml(existingPowerPlants.sourceName)} (${escapeHtml(existingPowerPlants.sourceUpdated)})${sourceLink}`,
+  ]
+    .filter(Boolean)
+    .join("<br>");
 }
 
 function escapeHtml(value: string | number | boolean | null | undefined): string {
@@ -1343,7 +1407,7 @@ export default function InterconnectionPage() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-4 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
-        <Metric label="Active queue" value={interconnectionData.stats.activeQueueCount.toString()} detail={`${formatMw(interconnectionData.stats.activeQueueMw)} MW`} />
+        <Metric label="Active SPP Queue" value={interconnectionData.stats.activeQueueCount.toString()} detail={`${formatMw(interconnectionData.stats.activeQueueMw)} MW`} />
         <Metric
           label="Nearby active"
           value={`${visibleNearbyProjects.length} (${formatMw(nearbyActiveMw)} MW)`}
@@ -1368,7 +1432,7 @@ export default function InterconnectionPage() {
             <div>
               <h2 className="text-lg font-semibold">Queue Map</h2>
               <p className="text-xs text-[#66727a]">
-                Satellite imagery with OpenInfraMap power lines, substations, plants, the parcel, and SPP queue projects.
+                Satellite imagery with OpenInfraMap grid assets, PowerPlantsInfo existing plants, the parcel, and SPP queue projects.
               </p>
             </div>
             <div className="flex flex-col gap-2 md:items-end">
@@ -1778,10 +1842,12 @@ function SatelliteInfrastructureMap({
 }) {
   const [coordinateInput, setCoordinateInput] = useState("");
   const [locatorMessage, setLocatorMessage] = useState("Enter coordinates or upload KML/KMZ to make it the active parcel.");
+  const [showExistingPlants, setShowExistingPlants] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const popupRef = useRef<MapLibrePopup | null>(null);
   const currentParcelBoundsRef = useRef<[[number, number], [number, number]] | undefined>(locatorBounds(initialParcelData()));
+  const showExistingPlantsRef = useRef(showExistingPlants);
   const selectedIdRef = useRef(selectedId);
   const projectsRef = useRef(projects);
   const activeParcelCenterRef = useRef(activeParcelCenter);
@@ -1863,6 +1929,16 @@ function SatelliteInfrastructureMap({
     const source = mapRef.current?.getSource("queue-projects");
     source?.setData?.(mapDataFor(projects, selectedId, activeParcelCenter, electricalDistances));
   }, [activeParcelCenter, electricalDistances, projects, selectedId]);
+
+  useEffect(() => {
+    showExistingPlantsRef.current = showExistingPlants;
+    const map = mapRef.current;
+    if (!map) return;
+    const visibility = showExistingPlants ? "visible" : "none";
+    for (const layerId of existingPowerPlantLayerIds) {
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+    }
+  }, [showExistingPlants]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2093,6 +2169,92 @@ function SatelliteInfrastructureMap({
           },
         });
 
+        map.addSource(existingPowerPlantSourceId, {
+          type: "geojson",
+          data: existingPowerPlants.dataUrl,
+          cluster: true,
+          clusterMaxZoom: 8,
+          clusterRadius: 44,
+          attribution: `Existing power plants © <a href="${existingPowerPlants.sourceUrl}">${existingPowerPlants.sourceName}</a>`,
+        });
+        map.addLayer({
+          id: "existing-power-plant-clusters",
+          type: "circle",
+          source: existingPowerPlantSourceId,
+          filter: ["has", "point_count"],
+          layout: { visibility: showExistingPlantsRef.current ? "visible" : "none" },
+          paint: {
+            "circle-color": [
+              "step",
+              ["get", "point_count"],
+              "#0f172a",
+              50,
+              "#1d4ed8",
+              200,
+              "#7e22ce",
+              1000,
+              "#be123c",
+            ],
+            "circle-opacity": 0.88,
+            "circle-radius": ["step", ["get", "point_count"], 15, 50, 21, 200, 28, 1000, 36],
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 2,
+          },
+        });
+        map.addLayer({
+          id: "existing-power-plant-cluster-count",
+          type: "symbol",
+          source: existingPowerPlantSourceId,
+          filter: ["has", "point_count"],
+          layout: {
+            visibility: showExistingPlantsRef.current ? "visible" : "none",
+            "text-field": ["get", "point_count_abbreviated"],
+            "text-font": ["Noto Sans Regular"],
+            "text-size": 12,
+          },
+          paint: {
+            "text-color": "#ffffff",
+            "text-halo-color": "#111827",
+            "text-halo-width": 1,
+          },
+        });
+        map.addLayer({
+          id: "existing-power-plant-hit-area",
+          type: "circle",
+          source: existingPowerPlantSourceId,
+          filter: ["!", ["has", "point_count"]],
+          layout: { visibility: showExistingPlantsRef.current ? "visible" : "none" },
+          paint: {
+            "circle-color": "rgba(255,255,255,0.01)",
+            "circle-opacity": 0.01,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 10, 9, 14, 13, 20],
+          },
+        });
+        map.addLayer({
+          id: "existing-power-plants",
+          type: "circle",
+          source: existingPowerPlantSourceId,
+          filter: ["!", ["has", "point_count"]],
+          layout: { visibility: showExistingPlantsRef.current ? "visible" : "none" },
+          paint: {
+            "circle-color": ["get", "fuelColor"],
+            "circle-opacity": 0.9,
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["sqrt", ["to-number", ["get", "capacityMw"]]],
+              1,
+              3,
+              25,
+              6,
+              85,
+              12,
+            ],
+            "circle-stroke-color": "#111827",
+            "circle-stroke-width": 2,
+          },
+        });
+
         map.addSource("queue-projects", {
           type: "geojson",
           data: mapDataFor(
@@ -2178,6 +2340,66 @@ function SatelliteInfrastructureMap({
           if (map) map.getCanvas().style.cursor = "";
         });
 
+        map.on("click", "existing-power-plant-clusters", (event) => {
+          if (!map) return;
+          map.easeTo?.({
+            center: [event.lngLat.lng, event.lngLat.lat],
+            duration: 550,
+            zoom: Math.min(12, (map.getZoom?.() ?? 6) + 2),
+          });
+        });
+        map.on("mouseenter", "existing-power-plant-clusters", () => {
+          if (map) map.getCanvas().style.cursor = "zoom-in";
+        });
+        map.on("mouseleave", "existing-power-plant-clusters", () => {
+          if (map) map.getCanvas().style.cursor = "";
+        });
+
+        const maplibregl = window.maplibregl;
+        if (!maplibregl) return;
+        const plantHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+        const showExistingPlantPopup = (event: MapLibreEvent, closeOnClick = false) => {
+          if (!map || !event.features?.[0]) return;
+          if (event.point) {
+            const nearQueueProject = map.queryRenderedFeatures(
+              [
+                [event.point.x - 10, event.point.y - 10],
+                [event.point.x + 10, event.point.y + 10],
+              ],
+              { layers: ["queue-project-hit-area", "queue-projects"] },
+            );
+            if (nearQueueProject.length > 0) {
+              plantHoverPopup.remove();
+              return;
+            }
+          }
+
+          const popup = closeOnClick
+            ? new maplibregl.Popup({ closeButton: true, offset: 12 })
+            : plantHoverPopup;
+          popup
+            .setLngLat(event.lngLat)
+            .setHTML(existingPlantPopupHtml(event.features[0].properties))
+            .addTo(map);
+          if (closeOnClick) {
+            popupRef.current?.remove();
+            popupRef.current = popup;
+          }
+        };
+
+        map.on("mousemove", "existing-power-plant-hit-area", (event) => {
+          if (!map) return;
+          map.getCanvas().style.cursor = "help";
+          showExistingPlantPopup(event);
+        });
+        map.on("mouseleave", "existing-power-plant-hit-area", () => {
+          if (map) map.getCanvas().style.cursor = "";
+          plantHoverPopup.remove();
+        });
+        map.on("click", "existing-power-plants", (event) => {
+          showExistingPlantPopup(event, true);
+        });
+
         const infrastructureLayers = [
           "power-line",
           "power-substations",
@@ -2185,20 +2407,26 @@ function SatelliteInfrastructureMap({
           "power-plants",
           "generators",
         ];
-        if (!window.maplibregl) return;
-        const hoverPopup = new window.maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+        const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
         for (const layer of infrastructureLayers) {
           map.on("mousemove", layer, (event) => {
             if (!map || !event.features?.[0]) return;
             if (event.point) {
-              const nearQueueProject = map.queryRenderedFeatures(
+              const nearbyInteractivePoint = map.queryRenderedFeatures(
                 [
                   [event.point.x - 12, event.point.y - 12],
                   [event.point.x + 12, event.point.y + 12],
                 ],
-                { layers: ["queue-project-hit-area", "queue-projects"] },
+                {
+                  layers: [
+                    "queue-project-hit-area",
+                    "queue-projects",
+                    "existing-power-plant-hit-area",
+                    "existing-power-plants",
+                  ],
+                },
               );
-              if (nearQueueProject.length > 0) {
+              if (nearbyInteractivePoint.length > 0) {
                 hoverPopup.remove();
                 return;
               }
@@ -2313,34 +2541,55 @@ function SatelliteInfrastructureMap({
         </div>
       </div>
       <div className="relative bg-[#111827] p-3">
-      <div className="h-[34rem] w-full overflow-hidden rounded-md" ref={containerRef} />
-      <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-[17rem] rounded-md border border-white/20 bg-black/65 p-3 text-xs leading-5 text-white shadow-lg">
-        <div className="mb-1 font-semibold">Generation Type</div>
-        {visibleTypeColors.map(([type, color]) => (
-          <div className="flex items-center gap-2" key={type}>
-            <span className="h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: color }} />
-            <span>{type}</span>
+        <div className="h-[34rem] w-full overflow-hidden rounded-md" ref={containerRef} />
+        <div className="absolute right-5 top-16 z-10 rounded-md border border-white/25 bg-black/70 px-3 py-2 text-xs text-white shadow-lg">
+          <label className="flex items-center gap-2">
+            <input
+              checked={showExistingPlants}
+              className="h-4 w-4 accent-[#f8fafc]"
+              onChange={(event) => setShowExistingPlants(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="font-semibold">Existing plants</span>
+            <span className="text-white/70">15,528</span>
+          </label>
+        </div>
+        <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-[22rem] rounded-md border border-white/20 bg-black/65 p-3 text-xs leading-5 text-white shadow-lg">
+          <div className="mb-1 font-semibold">SPP Queue Projects</div>
+          {visibleTypeColors.map(([type, color]) => (
+            <div className="flex items-center gap-2" key={type}>
+              <span className="h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: color }} />
+              <span>{type}</span>
+            </div>
+          ))}
+          <div className="mb-1 mt-3 font-semibold">Existing Plants</div>
+          <div className="grid grid-cols-2 gap-x-3">
+            {existingPlantFuelLegend.map((item) => (
+              <div className="flex items-center gap-2" key={item.label}>
+                <span className="h-2.5 w-2.5 rounded-full border border-[#111827]" style={{ background: item.color }} />
+                <span>{item.label}</span>
+              </div>
+            ))}
           </div>
-        ))}
-        <div className="mb-1 mt-3 font-semibold">Map Assets</div>
-        <div className="flex items-center gap-2">
-          <span className="h-0.5 w-5 rounded-full" style={{ background: assetColors.powerLine }} />
-          <span>Power line</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-sm border border-black" style={{ background: assetColors.substation }} />
-          <span>Substation</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-sm border border-white" style={{ background: assetColors.generator }} />
-          <span>Power plant / generator</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full border-2 border-white" style={{ background: assetColors.parcel }} />
-          <span>Parcel</span>
+          <div className="mb-1 mt-3 font-semibold">Map Assets</div>
+          <div className="flex items-center gap-2">
+            <span className="h-0.5 w-5 rounded-full" style={{ background: assetColors.powerLine }} />
+            <span>Power line</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm border border-black" style={{ background: assetColors.substation }} />
+            <span>Substation</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm border border-white" style={{ background: assetColors.generator }} />
+            <span>OpenInfraMap plant/generator</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full border-2 border-white" style={{ background: assetColors.parcel }} />
+            <span>Parcel</span>
+          </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
