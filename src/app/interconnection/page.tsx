@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { interconnectionData } from "@/data/interconnection-data";
 import {
@@ -17,6 +17,14 @@ type Project = (typeof interconnectionData.activeProjects)[number];
 type MapMode = "active" | "nearby";
 type QueueYear = "all" | string;
 type LonLat = { lon: number; lat: number };
+type NearbyProjectFilters = {
+  codFrom: string;
+  codTo: string;
+  electricalMax: string;
+  electricalMin: string;
+  straightMax: string;
+  straightMin: string;
+};
 type ElectricalDistanceEstimate = {
   electricalMiles?: number;
   electricalMilesExact?: number;
@@ -182,6 +190,14 @@ const hifldTransmissionLinesUrl =
   "https://services2.arcgis.com/LYMgRMwHfrWWEg3s/arcgis/rest/services/HIFLD_US_Electric_Power_Transmission_Lines/FeatureServer/0/query";
 const maxElectricalSnapMiles = 35;
 const interconnectionFyiProjectLookup: Record<string, InterconnectionFyiProject> = interconnectionFyiProjects;
+const emptyNearbyProjectFilters: NearbyProjectFilters = {
+  codFrom: "",
+  codTo: "",
+  electricalMax: "",
+  electricalMin: "",
+  straightMax: "",
+  straightMin: "",
+};
 
 function formatMw(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
@@ -319,6 +335,10 @@ function targetCommercialOperationDateLabel(record: InterconnectionFyiProject | 
   return record?.targetCommercialOperationDate ?? project.commercialOperationDate ?? "Pending";
 }
 
+function targetCommercialOperationDateValue(record: InterconnectionFyiProject | undefined, project: Project): string | undefined {
+  return record?.targetCommercialOperationDate ?? project.commercialOperationDate ?? undefined;
+}
+
 function ownerEntityLabel(record: InterconnectionFyiProject | undefined): string {
   if (!record) return "No Interconnection.fyi record";
   return record.owner ?? "Not public on Interconnection.fyi";
@@ -367,6 +387,68 @@ function projectsFor(
 
 function yearsFor(mode: MapMode, parcelCenter: LonLat, lookup: ElectricalDistanceLookup): string[] {
   return Array.from(new Set(projectsFor(mode, "all", parcelCenter, lookup).map(projectYear))).sort();
+}
+
+function numberFilterValue(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function dateFilterValue(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const date = new Date(`${value}T00:00:00Z`);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : undefined;
+}
+
+function dateValue(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const date = new Date(`${value}T00:00:00Z`);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : undefined;
+}
+
+function withinNumberRange(value: number, minValue: string, maxValue: string): boolean {
+  const min = numberFilterValue(minValue);
+  const max = numberFilterValue(maxValue);
+  if (min !== undefined && value < min) return false;
+  if (max !== undefined && value > max) return false;
+  return true;
+}
+
+function withinDateRange(value: string | undefined, fromValue: string, toValue: string): boolean {
+  const from = dateFilterValue(fromValue);
+  const to = dateFilterValue(toValue);
+  if (from === undefined && to === undefined) return true;
+
+  const time = dateValue(value);
+  if (time === undefined) return false;
+  if (from !== undefined && time < from) return false;
+  if (to !== undefined && time > to) return false;
+  return true;
+}
+
+function hasNearbyProjectFilters(filters: NearbyProjectFilters): boolean {
+  return Object.values(filters).some((value) => value.trim() !== "");
+}
+
+function nearbyProjectMatchesFilters(
+  project: Project,
+  filters: NearbyProjectFilters,
+  parcelCenter: LonLat,
+  lookup: ElectricalDistanceLookup,
+): boolean {
+  const interconnectionFyi = interconnectionFyiFor(project);
+  const electricalMiles = distanceSortMiles(project, parcelCenter, lookup);
+  const straightMiles = geospatialMilesExactFromParcel(project, parcelCenter);
+  const targetCod = targetCommercialOperationDateValue(interconnectionFyi, project);
+
+  return (
+    withinNumberRange(electricalMiles, filters.electricalMin, filters.electricalMax) &&
+    withinNumberRange(straightMiles, filters.straightMin, filters.straightMax) &&
+    withinDateRange(targetCod, filters.codFrom, filters.codTo)
+  );
 }
 
 function mapDataFor(
@@ -1375,6 +1457,7 @@ export default function InterconnectionPage() {
   const [activeParcelCenter, setActiveParcelCenter] = useState<LonLat>(defaultParcelCenter);
   const [electricalDistances, setElectricalDistances] = useState<ElectricalDistanceLookup>({});
   const [electricalDistanceSummary, setElectricalDistanceSummary] = useState<ElectricalDistanceSummary>(electricalFallbackSummary);
+  const [nearbyProjectFilters, setNearbyProjectFilters] = useState<NearbyProjectFilters>(emptyNearbyProjectFilters);
   const yearOptions = useMemo(() => yearsFor(mode, activeParcelCenter, electricalDistances), [activeParcelCenter, electricalDistances, mode]);
   const visibleProjects = useMemo(
     () => projectsFor(mode, selectedYear, activeParcelCenter, electricalDistances),
@@ -1383,6 +1466,13 @@ export default function InterconnectionPage() {
   const visibleNearbyProjects = useMemo(
     () => projectsFor("nearby", selectedYear, activeParcelCenter, electricalDistances),
     [activeParcelCenter, electricalDistances, selectedYear],
+  );
+  const filteredNearbyProjects = useMemo(
+    () =>
+      visibleNearbyProjects.filter((project) =>
+        nearbyProjectMatchesFilters(project, nearbyProjectFilters, activeParcelCenter, electricalDistances),
+      ),
+    [activeParcelCenter, electricalDistances, nearbyProjectFilters, visibleNearbyProjects],
   );
   const allNearbyProjects = useMemo(
     () => projectsFor("nearby", "all", activeParcelCenter, electricalDistances),
@@ -1630,6 +1720,12 @@ export default function InterconnectionPage() {
               Queue date, target COD, status, and withdrawn date are joined from public {interconnectionFyiSource.name} project records. Owner/entity uses the public Interconnecting Entity field when available.
             </p>
           </div>
+          <NearbyProjectFilterControls
+            filters={nearbyProjectFilters}
+            filteredCount={filteredNearbyProjects.length}
+            setFilters={setNearbyProjectFilters}
+            totalCount={visibleNearbyProjects.length}
+          />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1780px] text-left text-sm">
               <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
@@ -1657,14 +1753,22 @@ export default function InterconnectionPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleNearbyProjects.map((project) => (
-                  <NearbyProjectRow
-                    electricalDistances={electricalDistances}
-                    key={project.id}
-                    parcelCenter={activeParcelCenter}
-                    project={project}
-                  />
-                ))}
+                {filteredNearbyProjects.length > 0 ? (
+                  filteredNearbyProjects.map((project) => (
+                    <NearbyProjectRow
+                      electricalDistances={electricalDistances}
+                      key={project.id}
+                      parcelCenter={activeParcelCenter}
+                      project={project}
+                    />
+                  ))
+                ) : (
+                  <tr className="border-t border-[#eee8de]">
+                    <td className="px-3 py-8 text-center text-sm text-[#66727a]" colSpan={20}>
+                      No nearby active queue projects match the current filters.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1681,6 +1785,111 @@ function Metric({ detail, label, value }: { detail: string; label: string; value
       <p className="mt-2 text-2xl font-semibold text-[#172026]">{value}</p>
       <p className="mt-1 text-xs text-[#66727a]">{detail}</p>
     </div>
+  );
+}
+
+function NearbyProjectFilterControls({
+  filters,
+  filteredCount,
+  setFilters,
+  totalCount,
+}: {
+  filters: NearbyProjectFilters;
+  filteredCount: number;
+  setFilters: Dispatch<SetStateAction<NearbyProjectFilters>>;
+  totalCount: number;
+}) {
+  const active = hasNearbyProjectFilters(filters);
+  const updateFilter = (key: keyof NearbyProjectFilters, value: string) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+  };
+
+  return (
+    <div className="border-b border-[#e5ded2] bg-[#fffdf8] p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <FilterInput
+            label="Electrical mi min"
+            onChange={(value) => updateFilter("electricalMin", value)}
+            placeholder="0"
+            value={filters.electricalMin}
+          />
+          <FilterInput
+            label="Electrical mi max"
+            onChange={(value) => updateFilter("electricalMax", value)}
+            placeholder="300"
+            value={filters.electricalMax}
+          />
+          <FilterInput
+            label="Straight mi min"
+            onChange={(value) => updateFilter("straightMin", value)}
+            placeholder="0"
+            value={filters.straightMin}
+          />
+          <FilterInput
+            label="Straight mi max"
+            onChange={(value) => updateFilter("straightMax", value)}
+            placeholder="300"
+            value={filters.straightMax}
+          />
+          <FilterInput
+            label="COD from"
+            onChange={(value) => updateFilter("codFrom", value)}
+            type="date"
+            value={filters.codFrom}
+          />
+          <FilterInput
+            label="COD to"
+            onChange={(value) => updateFilter("codTo", value)}
+            type="date"
+            value={filters.codTo}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 lg:flex-col lg:items-end">
+          <p className="whitespace-nowrap text-xs font-semibold text-[#4b565e]">
+            Showing {filteredCount} of {totalCount}
+          </p>
+          <button
+            className="rounded-md border border-[#c8bda9] px-3 py-2 text-xs font-semibold text-[#22313a] transition hover:bg-[#f0e7d6] disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!active}
+            onClick={() => setFilters(emptyNearbyProjectFilters)}
+            type="button"
+          >
+            Clear filters
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilterInput({
+  label,
+  onChange,
+  placeholder,
+  type = "number",
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: "date" | "number";
+  value: string;
+}) {
+  return (
+    <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-[#5b6268]">
+      <span>{label}</span>
+      <input
+        className="mt-1 w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]"
+        inputMode={type === "number" ? "decimal" : undefined}
+        min={type === "number" ? "0" : undefined}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        step={type === "number" ? "0.1" : undefined}
+        type={type}
+        value={value}
+      />
+    </label>
   );
 }
 
