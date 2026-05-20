@@ -164,15 +164,36 @@ const existingPowerPlantLayerIds = [
   "existing-power-plants",
 ];
 
+const existingPlantFuelColors = {
+  biomass: "#84cc16",
+  coal: "#64748b",
+  cluster: "#334155",
+  gas: "#fb7185",
+  geothermal: "#c084fc",
+  hydro: "#38bdf8",
+  nuclear: "#f472b6",
+  other: "#f8fafc",
+  petroleum: "#f97316",
+  solar: "#ffd166",
+  storage: "#a78bfa",
+  wasteHeat: "#2dd4bf",
+  wind: "#38d996",
+} as const;
+
 const existingPlantFuelLegend = [
-  { color: "#ffd166", label: "Existing solar" },
-  { color: "#38d996", label: "Existing wind" },
-  { color: "#38bdf8", label: "Existing hydro" },
-  { color: "#a78bfa", label: "Existing storage" },
-  { color: "#fb7185", label: "Existing gas" },
-  { color: "#64748b", label: "Existing coal" },
-  { color: "#84cc16", label: "Existing biomass/waste" },
-  { color: "#f8fafc", label: "Other existing plants" },
+  { color: existingPlantFuelColors.solar, label: "Existing solar" },
+  { color: existingPlantFuelColors.wind, label: "Existing wind" },
+  { color: existingPlantFuelColors.hydro, label: "Existing hydro" },
+  { color: existingPlantFuelColors.storage, label: "Existing storage" },
+  { color: existingPlantFuelColors.gas, label: "Existing gas" },
+  { color: existingPlantFuelColors.petroleum, label: "Existing oil/petroleum" },
+  { color: existingPlantFuelColors.coal, label: "Existing coal" },
+  { color: existingPlantFuelColors.nuclear, label: "Existing nuclear" },
+  { color: existingPlantFuelColors.biomass, label: "Existing biomass/waste" },
+  { color: existingPlantFuelColors.geothermal, label: "Existing geothermal" },
+  { color: existingPlantFuelColors.wasteHeat, label: "Existing waste heat" },
+  { color: existingPlantFuelColors.cluster, label: "Existing plant cluster" },
+  { color: existingPlantFuelColors.other, label: "Other existing plants" },
 ];
 
 const stageColors = ["#2f4858", "#e4572e", "#17bebb", "#ffc914", "#6a4c93", "#76b041"];
@@ -481,7 +502,7 @@ function mapDataFor(
           nearby: distanceSortMiles(project, parcelCenter, lookup) <= 300,
           ownerEntity: interconnectionFyi?.owner ?? "",
           poi: project.poi,
-          poiVoltageKv: project.poiVoltageKv ?? 0,
+          poiVoltageKv: project.poiVoltageKv ?? project.poi,
           projectSnapMiles: lookup[project.id]?.projectSnapMiles ?? "",
           queueDate: interconnectionFyi?.queueDate ?? "",
           queueStage: project.queueStage,
@@ -1391,8 +1412,7 @@ function infrastructurePopupHtml(
       ? firstInfrastructureValue(properties, ["name", "ref", "operator"])
       : firstInfrastructureValue(properties, ["name", "ref", "operator", "substation"]),
   ) ?? "Not available in source";
-  const isGenerator = layerId.includes("plant") || layerId.includes("generator");
-  const featureType = isLine ? "Power line" : isGenerator ? "Power plant / generator" : "Substation";
+  const featureType = isLine ? "Power line" : "Substation";
   const hifldVoltage = isLine
     ? cleanInfrastructureValue(hifld?.VOLTAGE)
     : joinedAvailableInfrastructureValues(hifld?.MAX_VOLT, hifld?.MIN_VOLT);
@@ -2444,17 +2464,7 @@ function SatelliteInfrastructureMap({
           filter: ["has", "point_count"],
           layout: { visibility: showExistingPlantsRef.current ? "visible" : "none" },
           paint: {
-            "circle-color": [
-              "step",
-              ["get", "point_count"],
-              "#0f172a",
-              50,
-              "#334155",
-              200,
-              "#2563eb",
-              1000,
-              "#0f766e",
-            ],
+            "circle-color": existingPlantFuelColors.cluster,
             "circle-opacity": 0.88,
             "circle-radius": ["step", ["get", "point_count"], 15, 50, 21, 200, 28, 1000, 36],
             "circle-stroke-color": "#ffffff",
@@ -2501,20 +2511,28 @@ function SatelliteInfrastructureMap({
               "match",
               ["get", "fuelCode"],
               "WND",
-              "#38d996",
+              existingPlantFuelColors.wind,
               "SUN",
-              "#ffd166",
+              existingPlantFuelColors.solar,
               "WAT",
-              "#38bdf8",
+              existingPlantFuelColors.hydro,
               "MWH",
-              "#a78bfa",
+              existingPlantFuelColors.storage,
               ["BIT", "LIG", "RC", "SUB", "WC"],
-              "#64748b",
-              ["LFG", "MSW", "OBG", "OBL", "OBS", "SLW", "WDS"],
-              "#84cc16",
-              ["NG", "OG"],
-              "#fb7185",
-              ["get", "fuelColor"],
+              existingPlantFuelColors.coal,
+              ["NG", "OG", "BFG", "SGC"],
+              existingPlantFuelColors.gas,
+              ["DFO", "JF", "KER", "PC", "RFO", "WO"],
+              existingPlantFuelColors.petroleum,
+              "NUC",
+              existingPlantFuelColors.nuclear,
+              ["AB", "BLQ", "LFG", "MSW", "OBG", "OBL", "OBS", "SLW", "WDL", "WDS"],
+              existingPlantFuelColors.biomass,
+              "GEO",
+              existingPlantFuelColors.geothermal,
+              "WH",
+              existingPlantFuelColors.wasteHeat,
+              existingPlantFuelColors.other,
             ],
             "circle-opacity": 0.9,
             "circle-radius": [
