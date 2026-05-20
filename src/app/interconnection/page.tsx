@@ -169,7 +169,7 @@ const existingPlantFuelLegend = [
   { color: "#38d996", label: "Existing wind" },
   { color: "#38bdf8", label: "Existing hydro" },
   { color: "#a78bfa", label: "Existing storage" },
-  { color: "#fb7185", label: "Existing gas" },
+  { color: "#fb7185", label: "Existing gas (pink)" },
   { color: "#64748b", label: "Existing coal" },
   { color: "#84cc16", label: "Existing biomass/waste" },
   { color: "#f8fafc", label: "Other existing plants" },
@@ -505,6 +505,7 @@ function existingPlantNumberLabel(value: string | number | boolean | null | unde
 function existingPlantPopupHtml(properties: Record<string, string | number | boolean | null> | undefined): string {
   const name = firstAvailableInfrastructureValue(properties?.name);
   const fuel = firstAvailableInfrastructureValue(properties?.fuel);
+  const technology = firstAvailableInfrastructureValue(properties?.technologies);
   const capacity = existingPlantNumberLabel(properties?.capacityMw, " MW");
   const owner = firstAvailableInfrastructureValue(properties?.owner);
   const location = [properties?.county, properties?.state].map(cleanInfrastructureValue).filter(Boolean).join(", ");
@@ -520,8 +521,10 @@ function existingPlantPopupHtml(properties: Record<string, string | number | boo
     `<strong>${escapeHtml(name)}</strong>`,
     `Existing power plant | ${escapeHtml(fuel)} | ${escapeHtml(capacity)}`,
     location ? escapeHtml(location) : undefined,
+    `Plant type: ${escapeHtml(fuel)}`,
+    `Technology: ${escapeHtml(technology)}`,
     `Owner: ${escapeHtml(owner)}`,
-    `Operating year: ${escapeHtml(year)}`,
+    `Build/operating year: ${escapeHtml(year)}`,
     `Status: ${escapeHtml(status)}`,
     `Grid region: ${escapeHtml(gridRegion)}`,
     `Source: ${escapeHtml(existingPowerPlants.sourceName)} (${escapeHtml(existingPowerPlants.sourceUpdated)})${sourceLink}`,
@@ -2620,6 +2623,17 @@ function SatelliteInfrastructureMap({
         const maplibregl = window.maplibregl;
         if (!maplibregl) return;
         const plantHoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+        const existingPlantFeatureAt = (event: MapLibreEvent): MapLibreFeature | undefined => {
+          if (!map || !event.point) return event.features?.[0];
+          const nearbyPlants = map.queryRenderedFeatures(
+            [
+              [event.point.x - 16, event.point.y - 16],
+              [event.point.x + 16, event.point.y + 16],
+            ],
+            { layers: ["existing-power-plants", "existing-power-plant-hit-area"] },
+          );
+          return nearbyPlants.find((feature) => feature.properties?.plantId) ?? event.features?.[0];
+        };
         const showExistingPlantPopup = (event: MapLibreEvent, closeOnClick = false) => {
           if (!map || !event.features?.[0]) return;
           if (event.point) {
@@ -2636,12 +2650,14 @@ function SatelliteInfrastructureMap({
             }
           }
 
+          const plantFeature = existingPlantFeatureAt(event);
+          if (!plantFeature?.properties) return;
           const popup = closeOnClick
             ? new maplibregl.Popup({ closeButton: true, offset: 12 })
             : plantHoverPopup;
           popup
             .setLngLat(event.lngLat)
-            .setHTML(existingPlantPopupHtml(event.features[0].properties))
+            .setHTML(existingPlantPopupHtml(plantFeature.properties))
             .addTo(map);
           if (closeOnClick) {
             popupRef.current?.remove();
@@ -2677,17 +2693,27 @@ function SatelliteInfrastructureMap({
                   [event.point.x - 12, event.point.y - 12],
                   [event.point.x + 12, event.point.y + 12],
                 ],
-                {
-                  layers: [
-                    "queue-project-hit-area",
-                    "queue-projects",
-                    "existing-power-plant-hit-area",
-                    "existing-power-plants",
-                  ],
-                },
+                { layers: ["queue-project-hit-area", "queue-projects"] },
               );
               if (nearbyInteractivePoint.length > 0) {
                 hoverPopup.remove();
+                return;
+              }
+              const nearbyExistingPlant = map.queryRenderedFeatures(
+                [
+                  [event.point.x - 16, event.point.y - 16],
+                  [event.point.x + 16, event.point.y + 16],
+                ],
+                { layers: ["existing-power-plants", "existing-power-plant-hit-area"] },
+              );
+              const plantFeature = nearbyExistingPlant.find((feature) => feature.properties?.plantId);
+              if (plantFeature?.properties) {
+                hoverPopup.remove();
+                map.getCanvas().style.cursor = "help";
+                plantHoverPopup
+                  .setLngLat(event.lngLat)
+                  .setHTML(existingPlantPopupHtml(plantFeature.properties))
+                  .addTo(map);
                 return;
               }
             }
