@@ -5,6 +5,7 @@ import JSZip from "jszip";
 import { interconnectionData } from "@/data/interconnection-data";
 import { sppStudyGridMetrics } from "@/data/spp-study-grid-metrics";
 import { substationMvaRatings, type SubstationMvaRating } from "@/data/substation-mva-ratings";
+import { substationUpgradeRecords, type SubstationUpgradeRecord } from "@/data/substation-upgrade-years";
 
 type Project = (typeof interconnectionData.activeProjects)[number];
 type MapMode = "active" | "nearby";
@@ -388,6 +389,40 @@ function lookupSubstationMva(...values: Array<string | number | boolean | null |
   }
 
   return bestMatch?.rating;
+}
+
+function normalizeSubstationName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b\d+(?:\.\d+)?\s*kv\b/g, " ")
+    .replace(/\b(substation|station|interchange|switching|tap)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lookupSubstationUpgrade(...values: Array<string | number | boolean | null | undefined>): SubstationUpgradeRecord | undefined {
+  const rawHaystack = values.filter(Boolean).join(" ");
+  const haystack = normalizeLookupText(rawHaystack);
+  const shortHaystack = normalizeSubstationName(rawHaystack);
+  if (!haystack) return undefined;
+
+  let bestMatch: { record: SubstationUpgradeRecord; score: number } | undefined;
+
+  for (const record of substationUpgradeRecords) {
+    for (const alias of [record.name, ...record.aliases]) {
+      const normalizedAlias = normalizeLookupText(alias);
+      const shortAlias = normalizeSubstationName(alias);
+      const directMatch = normalizedAlias && haystack.includes(normalizedAlias);
+      const shortMatch =
+        shortAlias.length >= 5 && (shortHaystack.includes(shortAlias) || shortAlias.includes(shortHaystack));
+      if (!directMatch && !shortMatch) continue;
+      const score = Math.max(normalizedAlias.length, shortAlias.length) + record.lastUpgradeYear / 10000;
+      if (!bestMatch || score > bestMatch.score) bestMatch = { record, score };
+    }
+  }
+
+  return bestMatch?.record;
 }
 
 function mvaRatingValue(
@@ -1059,13 +1094,27 @@ function infrastructurePopupHtml(
     hifld?.NAME,
     hifld?.ID,
   );
+  const documentedUpgrade = lookupSubstationUpgrade(
+    title,
+    properties?.name,
+    properties?.ref,
+    properties?.substation,
+    hifld?.NAME,
+    hifld?.ID,
+  );
   const mva = mvaRatingValue(properties, documentedMva);
   const rows = [
     ["Feature", featureType],
     ["Name", isSubstation && hifld?.NAME ? hifld.NAME : title],
     ["Voltage", formatKv(hifldVoltage ?? firstInfrastructureValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]))],
     ["Built", formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]))],
-    ["Last upgraded", "Not available in checked public sources"],
+    [
+      "Last upgraded",
+      documentedUpgrade
+        ? `${documentedUpgrade.lastUpgradeYear} (${documentedUpgrade.status})`
+        : "No completed public upgrade record found",
+    ],
+    ["Upgrade record", documentedUpgrade?.upgradeName ?? "Not available"],
     ["MVA rating", mva.label],
     ["Rating type", mva.type],
     ["Operator", hifld?.OWNER ?? firstInfrastructureValue(properties, ["operator", "owner"])],
@@ -1124,6 +1173,7 @@ export default function InterconnectionPage() {
     [selectedId, visibleProjects],
   );
   const selectedMva = selected ? lookupSubstationMva(selected.poi) : undefined;
+  const selectedUpgrade = selected ? lookupSubstationUpgrade(selected.poi) : undefined;
   const selectedGridMetric = selected ? sppStudyGridMetrics[selected.id] : undefined;
 
   useEffect(() => {
@@ -1258,6 +1308,10 @@ export default function InterconnectionPage() {
                 <Info label="Status" value={selected.status} />
                 <Info label="TO" value={selected.transmissionOwner} />
                 <Info label="Type" value={selected.generationType} />
+                <Info
+                  label="POI last upgrade"
+                  value={selectedUpgrade ? `${selectedUpgrade.lastUpgradeYear} (${selectedUpgrade.status})` : "No completed public record found"}
+                />
                 <Info label="POI MVA" value={selectedMva?.mvaLabel ?? "No public rating found"} />
                 <Info label="MVA Source" value={selectedMva?.sourceTitle ?? "Checked lookup"} />
                 <Info label="SC MVA" value={selectedGridMetric ? formatMw(selectedGridMetric.shortCircuitMva) : "Not in study extract"} />
@@ -1292,7 +1346,7 @@ export default function InterconnectionPage() {
             </p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-left text-sm">
+            <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
                 <tr>
                   <th className="px-3 py-3">GI</th>
@@ -1303,6 +1357,7 @@ export default function InterconnectionPage() {
                   <th className="px-3 py-3">Stage</th>
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">POI</th>
+                  <th className="px-3 py-3">POI upgrade</th>
                   <th className="px-3 py-3">POI MVA</th>
                   <th className="px-3 py-3">SC MVA</th>
                   <th className="px-3 py-3">SCR</th>
@@ -1360,6 +1415,7 @@ function NearbyProjectRow({
   project: Project;
 }) {
   const mva = lookupSubstationMva(project.poi);
+  const upgrade = lookupSubstationUpgrade(project.poi);
   const gridMetric = sppStudyGridMetrics[project.id];
 
   return (
@@ -1383,6 +1439,13 @@ function NearbyProjectRow({
       </td>
       <td className="px-3 py-3">{project.status}</td>
       <td className="max-w-[260px] px-3 py-3 text-[#4b565e]">{project.poi}</td>
+      <td className="max-w-[220px] px-3 py-3 text-[#4b565e]">
+        {upgrade ? (
+          <span title={upgrade.sourceDetail}>{upgrade.lastUpgradeYear} ({upgrade.status})</span>
+        ) : (
+          "No completed public record found"
+        )}
+      </td>
       <td className="max-w-[220px] px-3 py-3 text-[#4b565e]">
         {mva ? (
           <span title={`${mva.ratingType}. ${mva.sourceDetail}`}>{mva.mvaLabel}</span>
