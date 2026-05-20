@@ -791,6 +791,18 @@ function formatPublicDate(value: string | number | boolean | null | undefined): 
   return cleanInfrastructureValue(value) ?? "Not available in source";
 }
 
+function isUnavailableLabel(value: string | undefined): boolean {
+  if (!value) return true;
+  return [
+    "Checked lookup",
+    "No completed public upgrade record found",
+    "No matching SIS/FERC/OASIS/planning record or calculable voltage/current tags found",
+    "Not available",
+    "Not available in source",
+    "Not found in checked public sources",
+  ].includes(value);
+}
+
 function hifldUrl(kind: "line" | "substation", lng: number, lat: number): string {
   const endpoint =
     kind === "line"
@@ -1404,7 +1416,7 @@ function infrastructurePopupHtml(
   layerId: string,
   properties: Record<string, string | number | boolean | null> | undefined,
   hifld?: Record<string, string | number | null>,
-): string {
+): string | null {
   const isLine = layerId.includes("line");
   const isSubstation = layerId.includes("substation");
   const title = cleanInfrastructureValue(
@@ -1424,6 +1436,8 @@ function infrastructurePopupHtml(
     properties?.operator,
     properties?.substation,
   );
+  const voltage = formatKv(hifldVoltage ?? firstInfrastructureValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]));
+  const built = formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]));
   const documentedMva = lookupSubstationMva(
     title,
     properties?.name,
@@ -1441,27 +1455,27 @@ function infrastructurePopupHtml(
     hifld?.ID,
   );
   const mva = mvaRatingValue(properties, documentedMva);
-  const rows = [
-    ["Feature", featureType],
-    ["Name", displayName],
-    ["Voltage", formatKv(hifldVoltage ?? firstInfrastructureValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]))],
-    ["Built", formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]))],
-    [
-      "Last upgraded",
-      documentedUpgrade
-        ? `${documentedUpgrade.lastUpgradeYear} (${documentedUpgrade.status})`
-        : "No completed public upgrade record found",
-    ],
-    ["Upgrade record", documentedUpgrade?.upgradeName ?? "Not available"],
-    ["MVA rating", mva.label],
-    ["Rating type", mva.type],
-    ["Operator", firstAvailableInfrastructureValue(hifld?.OWNER, properties?.operator, properties?.owner)],
-    ["Status", firstAvailableInfrastructureValue(hifld?.STATUS, properties?.status)],
-  ];
+  const operator = firstAvailableInfrastructureValue(hifld?.OWNER, properties?.operator, properties?.owner);
+  const status = firstAvailableInfrastructureValue(hifld?.STATUS, properties?.status);
+  const usefulRows = [
+    !isUnavailableLabel(displayName) ? ["Name", displayName] : undefined,
+    !isUnavailableLabel(voltage) ? ["Voltage", voltage] : undefined,
+    !isUnavailableLabel(built) ? ["Built", built] : undefined,
+    documentedUpgrade ? ["Last upgraded", `${documentedUpgrade.lastUpgradeYear} (${documentedUpgrade.status})`] : undefined,
+    documentedUpgrade ? ["Upgrade record", documentedUpgrade.upgradeName] : undefined,
+    mva.type !== "Not available" ? ["MVA rating", mva.label] : undefined,
+    mva.type !== "Not available" ? ["Rating type", mva.type] : undefined,
+    !isUnavailableLabel(operator) ? ["Operator", operator] : undefined,
+    !isUnavailableLabel(status) ? ["Status", status] : undefined,
+  ].filter((row): row is [string, string] => Boolean(row));
+
+  if (usefulRows.length === 0) return null;
+  const rows = [["Feature", featureType], ...usefulRows];
+  const heading = !isUnavailableLabel(displayName) ? displayName : featureType;
 
   return `
     <div style="font-size:12px;line-height:1.45;min-width:220px">
-      <strong style="display:block;font-size:13px;margin-bottom:6px">${escapeHtml(displayName)}</strong>
+      <strong style="display:block;font-size:13px;margin-bottom:6px">${escapeHtml(heading)}</strong>
       ${rows
         .map(
           ([label, value]) =>
@@ -2754,14 +2768,20 @@ function SatelliteInfrastructureMap({
                 return;
               }
             }
-            map.getCanvas().style.cursor = "help";
             const kind = event.features[0].layer?.id?.includes("line") ? "line" : "substation";
             const key = `${kind}:${event.lngLat.lng.toFixed(4)},${event.lngLat.lat.toFixed(4)}`;
             hoverKeyRef.current = key;
-            hoverPopup
-              .setLngLat(event.lngLat)
-              .setHTML(infrastructurePopupHtml(event.features[0].layer?.id ?? layer, event.features[0].properties))
-              .addTo(map);
+            const initialInfrastructureHtml = infrastructurePopupHtml(event.features[0].layer?.id ?? layer, event.features[0].properties);
+            if (initialInfrastructureHtml) {
+              map.getCanvas().style.cursor = "help";
+              hoverPopup
+                .setLngLat(event.lngLat)
+                .setHTML(initialInfrastructureHtml)
+                .addTo(map);
+            } else {
+              map.getCanvas().style.cursor = "";
+              hoverPopup.remove();
+            }
 
             if (!hifldCacheRef.current.has(key)) {
               hifldCacheRef.current.set(key, undefined);
@@ -2769,25 +2789,41 @@ function SatelliteInfrastructureMap({
                 .then((hifld) => {
                   hifldCacheRef.current.set(key, hifld);
                   if (hoverKeyRef.current !== key || !map) return;
-                  hoverPopup
-                    .setLngLat(event.lngLat)
-                    .setHTML(infrastructurePopupHtml(event.features?.[0]?.layer?.id ?? layer, event.features?.[0]?.properties, hifld))
-                    .addTo(map);
+                  const enrichedInfrastructureHtml = infrastructurePopupHtml(
+                    event.features?.[0]?.layer?.id ?? layer,
+                    event.features?.[0]?.properties,
+                    hifld,
+                  );
+                  if (enrichedInfrastructureHtml) {
+                    map.getCanvas().style.cursor = "help";
+                    hoverPopup
+                      .setLngLat(event.lngLat)
+                      .setHTML(enrichedInfrastructureHtml)
+                      .addTo(map);
+                  } else {
+                    map.getCanvas().style.cursor = "";
+                    hoverPopup.remove();
+                  }
                 })
                 .catch(() => {
                   hifldCacheRef.current.set(key, undefined);
                 });
             } else {
-              hoverPopup
-                .setLngLat(event.lngLat)
-                .setHTML(
-                  infrastructurePopupHtml(
-                    event.features[0].layer?.id ?? layer,
-                    event.features[0].properties,
-                    hifldCacheRef.current.get(key),
-                  ),
-                )
-                .addTo(map);
+              const cachedInfrastructureHtml = infrastructurePopupHtml(
+                event.features[0].layer?.id ?? layer,
+                event.features[0].properties,
+                hifldCacheRef.current.get(key),
+              );
+              if (cachedInfrastructureHtml) {
+                map.getCanvas().style.cursor = "help";
+                hoverPopup
+                  .setLngLat(event.lngLat)
+                  .setHTML(cachedInfrastructureHtml)
+                  .addTo(map);
+              } else {
+                map.getCanvas().style.cursor = "";
+                hoverPopup.remove();
+              }
             }
           });
           map.on("mouseleave", layer, () => {
