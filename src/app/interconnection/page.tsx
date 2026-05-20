@@ -1611,13 +1611,14 @@ export default function InterconnectionPage() {
                   Nearby
                 </button>
               </div>
-              <div className="flex max-w-full flex-wrap justify-end gap-1 rounded-md border border-[#cfc5b6] bg-[#f7f2e9] p-1">
+              <div className="flex max-w-full flex-wrap items-center justify-end gap-1 rounded-md border border-[#cfc5b6] bg-[#f7f2e9] p-1">
+                <span className="px-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b5d2a]">COD Year</span>
                 <button
                   className={`rounded px-2.5 py-1.5 text-xs font-semibold ${selectedYear === "all" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
                   onClick={() => setSelectedYear("all")}
                   type="button"
                 >
-                  All
+                  All CODs
                 </button>
                 {yearOptions.map((year) => (
                   <button
