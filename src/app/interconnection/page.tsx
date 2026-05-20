@@ -195,8 +195,10 @@ function distanceBasisLabel(project: Project, lookup: ElectricalDistanceLookup):
 }
 
 function formatPoiVoltage(value: string | number | boolean | null | undefined): string {
-  if (value === undefined || value === null || value === "" || Number(value) <= 0) return "Not listed";
-  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(Number(value))} kV`;
+  if (isUnavailableSentinel(value)) return "Not listed";
+  const numeric = numericValuesFrom(value)[0];
+  if (!Number.isFinite(numeric) || numeric <= 0 || isSentinelNumber(numeric)) return "Not listed";
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)} kV`;
 }
 
 function projectColor(project: Project) {
@@ -277,6 +279,49 @@ function escapeHtml(value: string | number | boolean | null | undefined): string
     .replaceAll("'", "&#039;");
 }
 
+function numericValuesFrom(value: string | number | boolean | null | undefined): number[] {
+  return (
+    String(value ?? "")
+      .match(/-?\d[\d,]*(?:\.\d+)?/g)
+      ?.map((part) => Number(part.replaceAll(",", "")))
+      .filter((part) => Number.isFinite(part)) ?? []
+  );
+}
+
+function isSentinelNumber(value: number): boolean {
+  return value <= -999 || Math.abs(value) >= 999000;
+}
+
+function isUnavailableSentinel(value: string | number | boolean | null | undefined): boolean {
+  if (value === undefined || value === null || value === "") return true;
+  const raw = String(value).trim();
+  if (!raw) return true;
+  const numericValues = numericValuesFrom(raw);
+  return numericValues.length > 0 && !/[a-z]/i.test(raw) && numericValues.every(isSentinelNumber);
+}
+
+function cleanInfrastructureValue(value: string | number | boolean | null | undefined): string | undefined {
+  if (isUnavailableSentinel(value)) return undefined;
+  const cleaned = String(value).trim();
+  return cleaned === "" ? undefined : cleaned;
+}
+
+function firstAvailableInfrastructureValue(...values: Array<string | number | boolean | null | undefined>): string {
+  for (const value of values) {
+    const cleaned = cleanInfrastructureValue(value);
+    if (cleaned) return cleaned;
+  }
+
+  return "Not available in source";
+}
+
+function joinedAvailableInfrastructureValues(...values: Array<string | number | boolean | null | undefined>): string | undefined {
+  const cleanedValues = values
+    .map(cleanInfrastructureValue)
+    .filter((value): value is string => Boolean(value));
+  return Array.from(new Set(cleanedValues)).join(" / ") || undefined;
+}
+
 function firstInfrastructureValue(
   properties: Record<string, string | number | boolean | null> | undefined,
   keys: string[],
@@ -284,26 +329,24 @@ function firstInfrastructureValue(
   if (!properties) return "Not available in source";
 
   for (const key of keys) {
-    const value = properties[key];
-    if (value !== undefined && value !== null && String(value).trim() !== "") return String(value);
+    const value = cleanInfrastructureValue(properties[key]);
+    if (value) return value;
   }
 
   return "Not available in source";
 }
 
 function formatKv(value: string | number | boolean | null | undefined): string {
-  if (value === undefined || value === null || value === "") return "Not available in source";
+  if (isUnavailableSentinel(value)) return "Not available in source";
 
   const raw = String(value);
   const values = raw
-    .split(/[;,/|]+/)
+    .split(/[;/|]+/)
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
-      const cleaned = part.replace(/[^\d.-]/g, "");
-      if (!cleaned) return undefined;
-      const numeric = Number(cleaned);
-      if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+      const numeric = numericValuesFrom(part)[0];
+      if (!Number.isFinite(numeric) || numeric <= 0 || isSentinelNumber(numeric)) return undefined;
       const kv = numeric > 1000 ? numeric / 1000 : numeric;
       return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(kv)} kV`;
     })
@@ -313,11 +356,9 @@ function formatKv(value: string | number | boolean | null | undefined): string {
 }
 
 function formatMva(value: string | number | boolean | null | undefined): string {
-  if (value === undefined || value === null || value === "") return "Not available in source";
-  const cleaned = String(value).replace(/[^\d.-]/g, "");
-  if (!cleaned) return "Not available in source";
-  const numeric = Number(cleaned);
-  if (!Number.isFinite(numeric)) return String(value);
+  if (isUnavailableSentinel(value)) return "Not available in source";
+  const numeric = numericValuesFrom(value)[0];
+  if (!Number.isFinite(numeric) || numeric <= 0 || isSentinelNumber(numeric)) return "Not available in source";
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(numeric)} MVA`;
 }
 
@@ -329,9 +370,9 @@ function firstNumericValue(
 
   for (const key of keys) {
     const raw = properties[key];
-    if (raw === undefined || raw === null || raw === "") continue;
-    const numeric = Number(String(raw).split(/[;,/|]+/)[0]?.replace(/[^\d.-]/g, ""));
-    if (Number.isFinite(numeric) && numeric > 0) return { key, value: numeric };
+    if (isUnavailableSentinel(raw)) continue;
+    const numeric = numericValuesFrom(String(raw).split(/[;/|]+/)[0])[0];
+    if (Number.isFinite(numeric) && numeric > 0 && !isSentinelNumber(numeric)) return { key, value: numeric };
   }
 
   return undefined;
@@ -457,12 +498,13 @@ function mvaRatingValue(
 }
 
 function formatPublicDate(value: string | number | boolean | null | undefined): string {
-  if (value === undefined || value === null || value === "") return "Not available in source";
+  if (isUnavailableSentinel(value)) return "Not available in source";
   if (typeof value === "number") {
+    if (value <= 0 || isSentinelNumber(value)) return "Not available in source";
     const date = new Date(value);
     if (Number.isFinite(date.getTime())) return date.toISOString().slice(0, 10);
   }
-  return String(value);
+  return cleanInfrastructureValue(value) ?? "Not available in source";
 }
 
 function hifldUrl(kind: "line" | "substation", lng: number, lat: number): string {
@@ -1076,16 +1118,24 @@ function infrastructurePopupHtml(
 ): string {
   const isLine = layerId.includes("line");
   const isSubstation = layerId.includes("substation");
-  const title = isLine
-    ? firstInfrastructureValue(properties, ["name", "ref", "operator"])
-    : firstInfrastructureValue(properties, ["name", "ref", "operator", "substation"]);
+  const title = cleanInfrastructureValue(
+    isLine
+      ? firstInfrastructureValue(properties, ["name", "ref", "operator"])
+      : firstInfrastructureValue(properties, ["name", "ref", "operator", "substation"]),
+  ) ?? "Not available in source";
   const isGenerator = layerId.includes("plant") || layerId.includes("generator");
   const featureType = isLine ? "Power line" : isGenerator ? "Power plant / generator" : "Substation";
   const hifldVoltage = isLine
-    ? hifld?.VOLTAGE
-    : hifld?.MAX_VOLT
-      ? `${hifld.MAX_VOLT}${hifld.MIN_VOLT && hifld.MIN_VOLT !== hifld.MAX_VOLT ? ` / ${hifld.MIN_VOLT}` : ""}`
-      : undefined;
+    ? cleanInfrastructureValue(hifld?.VOLTAGE)
+    : joinedAvailableInfrastructureValues(hifld?.MAX_VOLT, hifld?.MIN_VOLT);
+  const displayName = firstAvailableInfrastructureValue(
+    isSubstation ? hifld?.NAME : undefined,
+    title,
+    properties?.name,
+    properties?.ref,
+    properties?.operator,
+    properties?.substation,
+  );
   const documentedMva = lookupSubstationMva(
     title,
     properties?.name,
@@ -1105,7 +1155,7 @@ function infrastructurePopupHtml(
   const mva = mvaRatingValue(properties, documentedMva);
   const rows = [
     ["Feature", featureType],
-    ["Name", isSubstation && hifld?.NAME ? hifld.NAME : title],
+    ["Name", displayName],
     ["Voltage", formatKv(hifldVoltage ?? firstInfrastructureValue(properties, ["voltage", "voltage:primary", "voltage:secondary"]))],
     ["Built", formatPublicDate(firstInfrastructureValue(properties, ["start_date", "construction_date", "commissioned", "date"]))],
     [
@@ -1117,13 +1167,13 @@ function infrastructurePopupHtml(
     ["Upgrade record", documentedUpgrade?.upgradeName ?? "Not available"],
     ["MVA rating", mva.label],
     ["Rating type", mva.type],
-    ["Operator", hifld?.OWNER ?? firstInfrastructureValue(properties, ["operator", "owner"])],
-    ["Status", hifld?.STATUS ?? firstInfrastructureValue(properties, ["status"])],
+    ["Operator", firstAvailableInfrastructureValue(hifld?.OWNER, properties?.operator, properties?.owner)],
+    ["Status", firstAvailableInfrastructureValue(hifld?.STATUS, properties?.status)],
   ];
 
   return `
     <div style="font-size:12px;line-height:1.45;min-width:220px">
-      <strong style="display:block;font-size:13px;margin-bottom:6px">${escapeHtml(title)}</strong>
+      <strong style="display:block;font-size:13px;margin-bottom:6px">${escapeHtml(displayName)}</strong>
       ${rows
         .map(
           ([label, value]) =>
