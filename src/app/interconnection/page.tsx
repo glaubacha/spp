@@ -2839,38 +2839,38 @@ function SatelliteInfrastructureMap({
             <span className="text-white/70">15,528</span>
           </label>
         </div>
-        <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-[22rem] rounded-md border border-white/20 bg-black/65 p-3 text-xs leading-5 text-white shadow-lg">
-          <div className="mb-1 font-semibold">SPP Queue Projects</div>
+        <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[17rem] rounded border border-white/20 bg-black/65 p-2 text-[0.65rem] leading-4 text-white shadow-lg">
+          <div className="mb-0.5 font-semibold">SPP Queue Projects</div>
           {visibleTypeColors.map(([type, color]) => (
-            <div className="flex items-center gap-2" key={type}>
-              <span className="h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: color }} />
+            <div className="flex items-center gap-1.5" key={type}>
+              <span className="h-2 w-2 rounded-full border border-white/70" style={{ background: color }} />
               <span>{generationTypeLabel(type)}</span>
             </div>
           ))}
-          <div className="mb-1 mt-3 font-semibold">Existing Plants</div>
-          <div className="grid grid-cols-2 gap-x-3">
+          <div className="mb-0.5 mt-2 font-semibold">Existing Plants</div>
+          <div className="grid grid-cols-2 gap-x-2">
             {existingPlantFuelLegend.map((item) => (
-              <div className="flex items-center gap-2" key={item.label}>
-                <span className="h-2.5 w-2.5 rounded-full border border-[#111827]" style={{ background: item.color }} />
+              <div className="flex items-center gap-1.5" key={item.label}>
+                <span className="h-2 w-2 rounded-full border border-[#111827]" style={{ background: item.color }} />
                 <span>{item.label}</span>
               </div>
             ))}
           </div>
-          <div className="mb-1 mt-3 font-semibold">Map Assets</div>
-          <div className="flex items-center gap-2">
-            <span className="h-0.5 w-5 rounded-full" style={{ background: assetColors.powerLine }} />
+          <div className="mb-0.5 mt-2 font-semibold">Map Assets</div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-0.5 w-4 rounded-full" style={{ background: assetColors.powerLine }} />
             <span>Power line</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm border border-black" style={{ background: assetColors.substation }} />
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm border border-black" style={{ background: assetColors.substation }} />
             <span>Substation</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-sm border border-white" style={{ background: assetColors.generator }} />
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm border border-white" style={{ background: assetColors.generator }} />
             <span>OpenInfraMap plant/generator</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full border-2 border-white" style={{ background: assetColors.parcel }} />
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border border-white" style={{ background: assetColors.parcel }} />
             <span>Parcel</span>
           </div>
         </div>
