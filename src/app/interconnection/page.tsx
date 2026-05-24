@@ -238,6 +238,10 @@ const defaultParcelCenter: LonLat = {
   lat: interconnectionData.parcel.center.lat,
   lon: interconnectionData.parcel.center.lon,
 };
+const emptyLocatorFeatureCollection: LocatorFeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+};
 const electricalFallbackSummary: ElectricalDistanceSummary = {
   message: "Electrical path distances calculate from public power-line geometry after the map loads.",
   resolved: 0,
@@ -513,6 +517,7 @@ function mapDataFor(
   selectedId: string,
   parcelCenter: LonLat,
   lookup: ElectricalDistanceLookup,
+  hasActiveParcel: boolean,
 ): GeoJsonFeatureCollection {
   return {
     type: "FeatureCollection",
@@ -529,14 +534,14 @@ function mapDataFor(
           id: project.id,
           capacityMw: project.capacityMw,
           color: projectColor(project),
-          distanceBasis: distanceBasisLabel(project, lookup),
-          electricalMiles: electricalMilesForProject(project, lookup) ?? "",
+          distanceBasis: hasActiveParcel ? distanceBasisLabel(project, lookup) : "Set a load location to calculate distance.",
+          electricalMiles: hasActiveParcel ? electricalMilesForProject(project, lookup) ?? "" : "",
           fyiSourceUrl: interconnectionFyi?.sourceUrl ?? "",
           fyiStatus: interconnectionFyiStatusLabel(interconnectionFyi, project.status),
-          geospatialMiles: geospatialMilesFromParcel(project, parcelCenter),
+          geospatialMiles: hasActiveParcel ? geospatialMilesFromParcel(project, parcelCenter) : "",
           generationType: generationTypeLabel(project.generationType),
-          linePathMiles: lookup[project.id]?.linePathMiles ?? "",
-          nearby: distanceSortMiles(project, parcelCenter, lookup) <= 300,
+          linePathMiles: hasActiveParcel ? lookup[project.id]?.linePathMiles ?? "" : "",
+          nearby: hasActiveParcel ? distanceSortMiles(project, parcelCenter, lookup) <= 300 : true,
           ownerEntity: interconnectionFyi?.owner ?? "",
           poi: project.poi,
           poiVoltageKv: project.poiVoltageKv ?? project.poi,
@@ -1004,7 +1009,7 @@ function gasPipelinePopupHtml(properties: Record<string, string | number | boole
     !isUnavailableLabel(pipelineName) ? ["Pipeline", pipelineName] : undefined,
     !isUnavailableLabel(type) && type !== pipelineName ? ["Pipeline type", type] : undefined,
     !isUnavailableLabel(operator) ? ["Owner / operator", operator] : undefined,
-    ["Distance to parcel", distanceLabel],
+    ["Distance to load", distanceLabel],
     !isUnavailableLabel(lengthLabel) ? ["Mapped segment", lengthLabel] : undefined,
     ["Source", sourceName === "Not available in source" ? gasPipelines.sourceName : sourceName],
   ].filter((row): row is [string, string] => Boolean(row));
@@ -1434,35 +1439,11 @@ function locatorBounds(data: LocatorFeatureCollection): [[number, number], [numb
 }
 
 function initialParcelData(): LocatorFeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        geometry: {
-          type: "Polygon",
-          coordinates: [interconnectionData.parcel.polygon.map((point) => [point.lon, point.lat])],
-        },
-        properties: { name: "Parcel" },
-      },
-    ],
-  };
+  return emptyLocatorFeatureCollection;
 }
 
 function initialParcelCenterData(): LocatorFeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [interconnectionData.parcel.center.lon, interconnectionData.parcel.center.lat],
-        },
-        properties: { name: "Parcel" },
-      },
-    ],
-  };
+  return emptyLocatorFeatureCollection;
 }
 
 function parcelPolygonData(data: LocatorFeatureCollection): LocatorFeatureCollection {
@@ -1477,7 +1458,7 @@ function parcelCenterData(data: LocatorFeatureCollection): LocatorFeatureCollect
   if (point) return { type: "FeatureCollection", features: [point] };
 
   const bounds = locatorBounds(data);
-  if (!bounds) return initialParcelCenterData();
+  if (!bounds) return emptyLocatorFeatureCollection;
 
   return {
     type: "FeatureCollection",
@@ -1704,17 +1685,24 @@ export default function InterconnectionPage() {
   const [selectedYear, setSelectedYear] = useState<QueueYear>("all");
   const [selectedId, setSelectedId] = useState<string>(interconnectionData.nearbyActive[0]?.id ?? "");
   const [activeParcelCenter, setActiveParcelCenter] = useState<LonLat>(defaultParcelCenter);
+  const [hasActiveParcel, setHasActiveParcel] = useState(false);
   const [electricalDistances, setElectricalDistances] = useState<ElectricalDistanceLookup>({});
   const [electricalDistanceSummary, setElectricalDistanceSummary] = useState<ElectricalDistanceSummary>(electricalFallbackSummary);
   const [nearbyProjectFilters, setNearbyProjectFilters] = useState<NearbyProjectFilters>(emptyNearbyProjectFilters);
-  const yearOptions = useMemo(() => yearsFor(mode, activeParcelCenter, electricalDistances), [activeParcelCenter, electricalDistances, mode]);
+  const yearOptions = useMemo(
+    () => (hasActiveParcel ? yearsFor(mode, activeParcelCenter, electricalDistances) : yearsFor("active", activeParcelCenter, {})),
+    [activeParcelCenter, electricalDistances, hasActiveParcel, mode],
+  );
   const visibleProjects = useMemo(
-    () => projectsFor(mode, selectedYear, activeParcelCenter, electricalDistances),
-    [activeParcelCenter, electricalDistances, mode, selectedYear],
+    () => {
+      const effectiveMode = hasActiveParcel ? mode : "active";
+      return projectsFor(effectiveMode, selectedYear, activeParcelCenter, hasActiveParcel ? electricalDistances : {});
+    },
+    [activeParcelCenter, electricalDistances, hasActiveParcel, mode, selectedYear],
   );
   const visibleNearbyProjects = useMemo(
-    () => projectsFor("nearby", selectedYear, activeParcelCenter, electricalDistances),
-    [activeParcelCenter, electricalDistances, selectedYear],
+    () => (hasActiveParcel ? projectsFor("nearby", selectedYear, activeParcelCenter, electricalDistances) : []),
+    [activeParcelCenter, electricalDistances, hasActiveParcel, selectedYear],
   );
   const filteredNearbyProjects = useMemo(
     () =>
@@ -1731,8 +1719,8 @@ export default function InterconnectionPage() {
           codDate: targetCommercialOperationDateValue(interconnectionFyi, project) ?? null,
           codYear: projectYear(project),
           county: project.town,
-          distanceMi: geospatialMilesExactFromParcel(project, activeParcelCenter),
-          electricalDistanceMi: electricalMilesForProject(project, electricalDistances) ?? null,
+          distanceMi: hasActiveParcel ? geospatialMilesExactFromParcel(project, activeParcelCenter) : null,
+          electricalDistanceMi: hasActiveParcel ? electricalMilesForProject(project, electricalDistances) ?? null : null,
           fuelType: generationTypeLabel(project.generationType),
           id: project.id,
           label: project.id,
@@ -1744,21 +1732,23 @@ export default function InterconnectionPage() {
           status: interconnectionFyiStatusLabel(interconnectionFyi, project.status),
         };
       }),
-    [activeParcelCenter, electricalDistances, visibleProjects],
+    [activeParcelCenter, electricalDistances, hasActiveParcel, visibleProjects],
   );
   const allNearbyProjects = useMemo(
-    () => projectsFor("nearby", "all", activeParcelCenter, electricalDistances),
-    [activeParcelCenter, electricalDistances],
+    () => (hasActiveParcel ? projectsFor("nearby", "all", activeParcelCenter, electricalDistances) : []),
+    [activeParcelCenter, electricalDistances, hasActiveParcel],
   );
   const nearbyActiveMw = visibleNearbyProjects.reduce((sum, project) => sum + project.capacityMw, 0);
   const nearbyNetworkCostSummary = useMemo(() => summarizeNetworkUpgradeCosts(visibleNearbyProjects), [visibleNearbyProjects]);
   const nearbyNetworkClusterSummaries = useMemo(() => networkUpgradeClusterSummaries(visibleNearbyProjects), [visibleNearbyProjects]);
   const nearestActive = useMemo(
     () =>
-      [...interconnectionData.activeProjects].sort(
-        (a, b) => distanceSortMiles(a, activeParcelCenter, electricalDistances) - distanceSortMiles(b, activeParcelCenter, electricalDistances),
-      )[0],
-    [activeParcelCenter, electricalDistances],
+      hasActiveParcel
+        ? [...interconnectionData.activeProjects].sort(
+            (a, b) => distanceSortMiles(a, activeParcelCenter, electricalDistances) - distanceSortMiles(b, activeParcelCenter, electricalDistances),
+          )[0]
+        : undefined,
+    [activeParcelCenter, electricalDistances, hasActiveParcel],
   );
   const nearbyByStage = useMemo(() => breakdownByStage(allNearbyProjects), [allNearbyProjects]);
   const nearbyByType = useMemo(() => breakdownMwByType(allNearbyProjects), [allNearbyProjects]);
@@ -1813,15 +1803,15 @@ export default function InterconnectionPage() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7b5d2a]">
-                SPP queue proximity
+                Generation + Load Matching Game
               </p>
               <h1 className="mt-2 text-3xl font-semibold text-[#172026] md:text-4xl">
-                Parcel 700011666 interconnection congestion view
+                Generation + Load Matching Game
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-[#48525a]">
-                The default KML parcel is plotted against decoded generation queue points from all four PowerBI report pages.
-                Distances use shortest available power-line path from the active parcel, with straight-line fallback when no
-                connected public line path can be resolved.
+                Enter a load location or upload a KML/KMZ parcel to compare it against decoded generation queue points from
+                all four PowerBI report pages. Distances calculate after a location is set, using the shortest available
+                public power-line path with straight-line fallback.
               </p>
             </div>
             <a
@@ -1840,31 +1830,32 @@ export default function InterconnectionPage() {
         <Metric label="Active SPP Queue" value={interconnectionData.stats.activeQueueCount.toString()} detail={`${formatMw(interconnectionData.stats.activeQueueMw)} MW`} />
         <Metric
           label="Nearby active"
-          value={`${visibleNearbyProjects.length} (${formatMw(nearbyActiveMw)} MW)`}
-          detail={selectedYear === "all" ? "within 300 miles" : `${selectedYear} within 300 miles`}
+          value={hasActiveParcel ? `${visibleNearbyProjects.length} (${formatMw(nearbyActiveMw)} MW)` : "Set load"}
+          detail={hasActiveParcel ? (selectedYear === "all" ? "within 300 miles" : `${selectedYear} within 300 miles`) : "enter coordinates or KML/KMZ"}
         />
         <Metric
           label="Nearest active"
-          value={nearestActive ? electricalDistanceLabel(nearestActive, activeParcelCenter, electricalDistances) : "None"}
-          detail={nearestActive?.id ?? "None"}
+          value={nearestActive ? electricalDistanceLabel(nearestActive, activeParcelCenter, electricalDistances) : "Set load"}
+          detail={nearestActive?.id ?? "no active load location"}
         />
         <Metric
           label="Nearby est. NU cost"
-          value={formatUsd(nearbyNetworkCostSummary.knownCostUsd)}
-          detail={`${nearbyNetworkCostSummary.knownCount}/${visibleNearbyProjects.length} source-backed${nearbyNetworkCostSummary.tbdCount ? `, ${nearbyNetworkCostSummary.tbdCount} TBD` : ""}`}
+          value={hasActiveParcel ? formatUsd(nearbyNetworkCostSummary.knownCostUsd) : "Set load"}
+          detail={hasActiveParcel ? `${nearbyNetworkCostSummary.knownCount}/${visibleNearbyProjects.length} source-backed${nearbyNetworkCostSummary.tbdCount ? `, ${nearbyNetworkCostSummary.tbdCount} TBD` : ""}` : "enter coordinates or KML/KMZ"}
         />
       </section>
 
       <section className="mx-auto max-w-7xl space-y-5 px-6 pb-6">
         <AskMapPanel
           currentFilters={{
+            activeLocationSet: hasActiveParcel,
             codYear: selectedYear === "all" ? null : selectedYear,
             mapMode: mode,
           }}
           datasetName="SPP generation interconnection queue"
           onApply={applyMapQuestion}
           projects={askMapProjects}
-          sourceNotes="SPP rows are decoded from the public PowerBI report and enriched where public sources are available. Distance uses electrical path estimates when available with straight-line fallback."
+          sourceNotes="SPP rows are decoded from the public PowerBI report and enriched where public sources are available. Distance uses electrical path estimates when an active load location has been set, with straight-line fallback."
           theme="light"
           totalProjectCount={interconnectionData.stats.totalDecodedProjects}
         />
@@ -1874,7 +1865,7 @@ export default function InterconnectionPage() {
             <div>
               <h2 className="text-lg font-semibold">Queue Map</h2>
               <p className="text-xs text-[#66727a]">
-                Satellite imagery with OpenInfraMap grid assets, PowerPlantsInfo existing plants, the parcel, and SPP queue projects.
+                Satellite imagery with OpenInfraMap grid assets, PowerPlantsInfo existing plants, user-set load geometry, and queue projects.
               </p>
             </div>
             <div className="flex flex-col gap-2 md:items-end">
@@ -1921,11 +1912,13 @@ export default function InterconnectionPage() {
             activeParcelCenter={activeParcelCenter}
             electricalDistances={electricalDistances}
             electricalDistanceSummary={electricalDistanceSummary.message}
+            hasActiveParcel={hasActiveParcel}
             projects={visibleProjects}
             selectedId={selected?.id ?? ""}
             setActiveParcelCenter={setActiveParcelCenter}
             setElectricalDistanceSummary={setElectricalDistanceSummary}
             setElectricalDistances={setElectricalDistances}
+            setHasActiveParcel={setHasActiveParcel}
             setSelectedId={setSelectedId}
           />
         </div>
@@ -1946,10 +1939,10 @@ export default function InterconnectionPage() {
                 ) : null}
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4 xl:grid-cols-5">
-                <Info label="Electrical est." value={electricalDistanceLabel(selected, activeParcelCenter, electricalDistances)} />
-                <Info label="Public-line path" value={linePathDistanceLabel(selected, electricalDistances)} />
-                <Info label="Project-line snap" value={projectSnapDistanceLabel(selected, electricalDistances)} />
-                <Info label="Straight-line" value={`${formatMiles(geospatialMilesFromParcel(selected, activeParcelCenter))} mi`} />
+                <Info label="Electrical est." value={hasActiveParcel ? electricalDistanceLabel(selected, activeParcelCenter, electricalDistances) : "Set load"} />
+                <Info label="Public-line path" value={hasActiveParcel ? linePathDistanceLabel(selected, electricalDistances) : "Set load"} />
+                <Info label="Project-line snap" value={hasActiveParcel ? projectSnapDistanceLabel(selected, electricalDistances) : "Set load"} />
+                <Info label="Straight-line" value={hasActiveParcel ? `${formatMiles(geospatialMilesFromParcel(selected, activeParcelCenter))} mi` : "Set load"} />
                 <Info label="Capacity" value={`${formatMw(selected.capacityMw)} MW`} />
                 <Info label="Stage" value={selected.queueStage} />
                 <Info label="Est. NU cost" value={networkUpgradeCostLabel(selectedNetworkCost)} />
@@ -1990,8 +1983,9 @@ export default function InterconnectionPage() {
                 )}
               </div>
               <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
-                {electricalDistanceSummary.message} The parcel itself can be replaced with a coordinate or uploaded KML/KMZ,
-                which updates the active parcel marker and recalculates distances.
+                {hasActiveParcel
+                  ? electricalDistanceSummary.message
+                  : "Set a load location with coordinates or KML/KMZ to calculate electrical and straight-line distances."}
               </div>
             </div>
           ) : (
@@ -2411,38 +2405,43 @@ function SatelliteInfrastructureMap({
   activeParcelCenter,
   electricalDistances,
   electricalDistanceSummary,
+  hasActiveParcel,
   projects,
   selectedId,
   setActiveParcelCenter,
   setElectricalDistanceSummary,
   setElectricalDistances,
+  setHasActiveParcel,
   setSelectedId,
 }: {
   activeParcelCenter: LonLat;
   electricalDistances: ElectricalDistanceLookup;
   electricalDistanceSummary: string;
+  hasActiveParcel: boolean;
   projects: readonly Project[];
   selectedId: string;
   setActiveParcelCenter: (value: LonLat) => void;
   setElectricalDistanceSummary: (value: ElectricalDistanceSummary) => void;
   setElectricalDistances: (value: ElectricalDistanceLookup) => void;
+  setHasActiveParcel: (value: boolean) => void;
   setSelectedId: (value: string) => void;
 }) {
   const [coordinateInput, setCoordinateInput] = useState("");
-  const [locatorMessage, setLocatorMessage] = useState("Enter coordinates or upload KML/KMZ to make it the active parcel.");
+  const [locatorMessage, setLocatorMessage] = useState("No load location set. Enter coordinates or upload KML/KMZ to start matching generation to load.");
   const [gasPipelineCount, setGasPipelineCount] = useState(0);
-  const [gasPipelineMessage, setGasPipelineMessage] = useState("Pipeline screening loads after the map loads.");
+  const [gasPipelineMessage, setGasPipelineMessage] = useState("Pipeline screening loads after a load location is set.");
   const [showExistingPlants, setShowExistingPlants] = useState(true);
   const [showGasPipelines, setShowGasPipelines] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const popupRef = useRef<MapLibrePopup | null>(null);
-  const currentParcelBoundsRef = useRef<[[number, number], [number, number]] | undefined>(locatorBounds(initialParcelData()));
+  const currentParcelBoundsRef = useRef<[[number, number], [number, number]] | undefined>(undefined);
   const showExistingPlantsRef = useRef(showExistingPlants);
   const showGasPipelinesRef = useRef(showGasPipelines);
   const selectedIdRef = useRef(selectedId);
   const projectsRef = useRef(projects);
   const activeParcelCenterRef = useRef(activeParcelCenter);
+  const hasActiveParcelRef = useRef(hasActiveParcel);
   const electricalDistancesRef = useRef(electricalDistances);
   const distanceRequestRef = useRef(0);
   const gasPipelineRequestRef = useRef(0);
@@ -2458,7 +2457,7 @@ function SatelliteInfrastructureMap({
     distanceRequestRef.current = requestId;
     setElectricalDistances({});
     setElectricalDistanceSummary({
-      message: "Calculating electrical path distance from the active parcel...",
+      message: "Calculating electrical path distance from the active load location...",
       resolved: 0,
       total: interconnectionData.activeProjects.length,
     });
@@ -2495,13 +2494,13 @@ function SatelliteInfrastructureMap({
   const refreshGasPipelines = (map: MapLibreMap | null, parcelCenter: LonLat) => {
     const requestId = gasPipelineRequestRef.current + 1;
     gasPipelineRequestRef.current = requestId;
-    setGasPipelineMessage(`Loading gas and hazardous-liquid pipeline screening layers within ${gasPipelines.dataRadiusMiles} miles of the active parcel...`);
+    setGasPipelineMessage(`Loading gas and hazardous-liquid pipeline screening layers within ${gasPipelines.dataRadiusMiles} miles of the active load location...`);
     void fetchGasPipelineFeatureCollection(parcelCenter)
       .then((data) => {
         if (gasPipelineRequestRef.current !== requestId) return;
         setGasPipelineCount(data.features.length);
         setGasPipelineMessage(
-          `Loaded ${data.features.length} pipeline segments within ${gasPipelines.dataRadiusMiles} miles of the active parcel.`,
+          `Loaded ${data.features.length} pipeline segments within ${gasPipelines.dataRadiusMiles} miles of the active load location.`,
         );
         map?.getSource(gasPipelineSourceId)?.setData?.(data);
       })
@@ -2518,13 +2517,15 @@ function SatelliteInfrastructureMap({
     mapRef.current?.getSource("parcel-center")?.setData?.(parcelCenterData(data));
     const bounds = locatorBounds(data);
     const center = locatorCenterPoint(data);
+    hasActiveParcelRef.current = true;
     activeParcelCenterRef.current = center;
+    setHasActiveParcel(true);
     setActiveParcelCenter(center);
     if (bounds) currentParcelBoundsRef.current = bounds;
     if (bounds) mapRef.current?.fitBounds(bounds, { padding: 96, duration: 900 });
     refreshElectricalDistances(mapRef.current, center);
     refreshGasPipelines(mapRef.current, center);
-    setLocatorMessage(`${message} This is now the active parcel on the map.`);
+    setLocatorMessage(`${message} This is now the active load location on the map.`);
   };
 
   const handleCoordinateSubmit = () => {
@@ -2549,10 +2550,11 @@ function SatelliteInfrastructureMap({
     selectedIdRef.current = selectedId;
     projectsRef.current = projects;
     activeParcelCenterRef.current = activeParcelCenter;
+    hasActiveParcelRef.current = hasActiveParcel;
     electricalDistancesRef.current = electricalDistances;
     const source = mapRef.current?.getSource("queue-projects");
-    source?.setData?.(mapDataFor(projects, selectedId, activeParcelCenter, electricalDistances));
-  }, [activeParcelCenter, electricalDistances, projects, selectedId]);
+    source?.setData?.(mapDataFor(projects, selectedId, activeParcelCenter, electricalDistances, hasActiveParcel));
+  }, [activeParcelCenter, electricalDistances, hasActiveParcel, projects, selectedId]);
 
   useEffect(() => {
     showExistingPlantsRef.current = showExistingPlants;
@@ -2602,26 +2604,16 @@ function SatelliteInfrastructureMap({
 
       if (cancelled || !containerRef.current || !window.maplibregl) return;
 
-      const points = [
-        ...interconnectionData.activeProjects.map((project) => [project.lon, project.lat] as [number, number]),
-        ...interconnectionData.parcel.polygon.map((point) => [point.lon, point.lat] as [number, number]),
-      ];
+      const points = interconnectionData.activeProjects.map((project) => [project.lon, project.lat] as [number, number]);
       const lons = points.map(([lon]) => lon);
       const lats = points.map(([, lat]) => lat);
       const fitBounds: [[number, number], [number, number]] = [
         [Math.min(...lons) - 0.9, Math.min(...lats) - 0.7],
         [Math.max(...lons) + 0.9, Math.max(...lats) + 0.7],
       ];
-      const parcelLons = interconnectionData.parcel.polygon.map((point) => point.lon);
-      const parcelLats = interconnectionData.parcel.polygon.map((point) => point.lat);
-      const parcelBounds: [[number, number], [number, number]] = [
-        [Math.min(...parcelLons) - 0.018, Math.min(...parcelLats) - 0.018],
-        [Math.max(...parcelLons) + 0.018, Math.max(...parcelLats) + 0.018],
-      ];
-
       map = new window.maplibregl.Map({
         attributionControl: true,
-        center: [interconnectionData.parcel.center.lon, interconnectionData.parcel.center.lat],
+        center: [defaultParcelCenter.lon, defaultParcelCenter.lat],
         container: containerRef.current,
         maxZoom: 18,
         minZoom: 3,
@@ -2919,7 +2911,7 @@ function SatelliteInfrastructureMap({
             "line-width": ["interpolate", ["linear"], ["zoom"], 4, 8, 9, 12, 14, 18],
           },
         });
-        refreshGasPipelines(map, activeParcelCenterRef.current);
+        if (hasActiveParcelRef.current) refreshGasPipelines(map, activeParcelCenterRef.current);
 
         map.addSource("queue-projects", {
           type: "geojson",
@@ -2928,6 +2920,7 @@ function SatelliteInfrastructureMap({
             selectedIdRef.current,
             activeParcelCenterRef.current,
             electricalDistancesRef.current,
+            hasActiveParcelRef.current,
           ),
         });
         map.addLayer({
@@ -2986,12 +2979,13 @@ function SatelliteInfrastructureMap({
           const electricalMiles = Number(props.electricalMiles);
           const geospatialMiles = Number(props.geospatialMiles);
           const projectSnapMiles = Number(props.projectSnapMiles);
-          const electricalLabel =
-            Number.isFinite(electricalMiles) && electricalMiles > 0
+          const electricalLabel = hasActiveParcelRef.current
+            ? Number.isFinite(electricalMiles) && electricalMiles > 0
               ? `${formatMiles(roundMiles(electricalMiles))} mi electrical est.`
-              : `${escapeHtml(props.geospatialMiles)} mi straight-line fallback`;
-          const straightLabel = Number.isFinite(geospatialMiles) ? `${formatMiles(geospatialMiles)} mi straight-line` : "";
-          const snapLabel = Number.isFinite(projectSnapMiles) ? `${formatMiles(projectSnapMiles)} mi project-line snap` : "";
+              : `${escapeHtml(props.geospatialMiles)} mi straight-line fallback`
+            : "Set a load location to calculate distance";
+          const straightLabel = hasActiveParcelRef.current && Number.isFinite(geospatialMiles) ? `${formatMiles(geospatialMiles)} mi straight-line` : "";
+          const snapLabel = hasActiveParcelRef.current && Number.isFinite(projectSnapMiles) ? `${formatMiles(projectSnapMiles)} mi project-line snap` : "";
           const sourceUrl = String(props.fyiSourceUrl ?? "");
           const sourceLink = sourceUrl
             ? `<br><a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Open Interconnection.fyi record</a>`
@@ -3000,7 +2994,7 @@ function SatelliteInfrastructureMap({
           popupRef.current = new window.maplibregl.Popup({ closeButton: false, offset: 12 })
             .setLngLat(event.lngLat)
             .setHTML(
-              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>Status: ${escapeHtml(props.fyiStatus ?? props.status)}<br>Queue date: ${escapeHtml(props.queueDate || "Not listed")}<br>Target COD: ${escapeHtml(props.targetCommercialOperationDate || "Pending")}<br>Owner/entity: ${escapeHtml(props.ownerEntity || "Not public on Interconnection.fyi")}${withdrawnLine}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>Est. NU cost: ${escapeHtml(networkUpgradeCostLabel(networkCost))}<br>${escapeHtml(props.queueStage)}<br>${escapeHtml(electricalLabel)} from parcel${straightLabel ? `<br>${escapeHtml(straightLabel)}` : ""}${snapLabel ? `<br>${escapeHtml(snapLabel)}` : ""}${sourceLink}`,
+              `<strong>${escapeHtml(projectId)}</strong><br>${escapeHtml(props.generationType)} | ${escapeHtml(capacityLabel)}<br>Status: ${escapeHtml(props.fyiStatus ?? props.status)}<br>Queue date: ${escapeHtml(props.queueDate || "Not listed")}<br>Target COD: ${escapeHtml(props.targetCommercialOperationDate || "Pending")}<br>Owner/entity: ${escapeHtml(props.ownerEntity || "Not public on Interconnection.fyi")}${withdrawnLine}<br>POI voltage: ${escapeHtml(formatPoiVoltage(props.poiVoltageKv))}<br>Est. NU cost: ${escapeHtml(networkUpgradeCostLabel(networkCost))}<br>${escapeHtml(props.queueStage)}<br>${escapeHtml(electricalLabel)}${hasActiveParcelRef.current ? " from load" : ""}${straightLabel ? `<br>${escapeHtml(straightLabel)}` : ""}${snapLabel ? `<br>${escapeHtml(snapLabel)}` : ""}${sourceLink}`,
             )
             .addTo(map);
         });
@@ -3211,16 +3205,18 @@ function SatelliteInfrastructureMap({
         }
 
         map.once("idle", () => {
-          refreshElectricalDistances(map, activeParcelCenterRef.current);
+          if (hasActiveParcelRef.current) refreshElectricalDistances(map, activeParcelCenterRef.current);
         });
       });
 
       zoomButton = document.createElement("button");
       zoomButton.className =
         "absolute right-5 top-5 z-10 rounded-md border border-white/30 bg-black/70 px-3 py-2 text-xs font-semibold text-white shadow-lg transition hover:bg-black";
-      zoomButton.textContent = "Zoom to parcel";
+      zoomButton.textContent = "Zoom to load";
       zoomButton.type = "button";
-      zoomButton.addEventListener("click", () => map?.fitBounds(currentParcelBoundsRef.current ?? parcelBounds, { padding: 88, duration: 800 }));
+      zoomButton.addEventListener("click", () => {
+        if (currentParcelBoundsRef.current) map?.fitBounds(currentParcelBoundsRef.current, { padding: 88, duration: 800 });
+      });
       containerRef.current.parentElement?.appendChild(zoomButton);
     };
 
@@ -3258,11 +3254,11 @@ function SatelliteInfrastructureMap({
           onClick={handleCoordinateSubmit}
           type="button"
         >
-          Set Parcel
+          Set Load
         </button>
         <label className="block">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
-            KML / KMZ parcel
+            KML / KMZ load area
           </span>
           <input
             accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz"
@@ -3273,7 +3269,7 @@ function SatelliteInfrastructureMap({
         </label>
         <div className="space-y-1 text-xs leading-5 text-[#66727a] lg:col-span-3">
           <p>{locatorMessage}</p>
-          <p>{electricalDistanceSummary}</p>
+          <p>{hasActiveParcel ? electricalDistanceSummary : "Electrical distances will calculate after a load location is set."}</p>
           <p>{gasPipelineMessage}</p>
           <p>
             NPMS Public Viewer is the first-pass screen for gas transmission and hazardous-liquid pipelines; it does not show
@@ -3352,7 +3348,7 @@ function SatelliteInfrastructureMap({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full border border-white" style={{ background: assetColors.parcel }} />
-            <span>Parcel</span>
+            <span>Load location</span>
           </div>
         </div>
       </div>

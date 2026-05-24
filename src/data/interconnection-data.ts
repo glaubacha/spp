@@ -9,7 +9,7 @@ export const interconnectionData = {
       "Executed GIAs",
       "In Study Map"
     ],
-    "note": "Queue data decoded from PowerBI public report model/querydata endpoints. Default parcel is Parcel 700011666 from the uploaded KML; distance-based proximity is recomputed from that parcel center."
+    "note": "Queue data decoded from PowerBI public report model/querydata endpoints. Distance-based proximity is recomputed after the user enters coordinates or uploads KML/KMZ."
   },
   "parcel": {
     "name": "Parcel 700011666",

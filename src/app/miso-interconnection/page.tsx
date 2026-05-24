@@ -165,7 +165,7 @@ type GeoJsonFeatureCollection = {
 const STATUS_OPTIONS = ["Active", "All statuses", "Withdrawn", "Done", "Pending Transfer"];
 
 const DEFAULT_PARCEL: MisoParcel = {
-  name: "Parcel 700011666",
+  name: "Initial map center",
   center: {
     lat: 36.517954963740614,
     lon: -101.32600777783057,
@@ -258,6 +258,11 @@ function formatDate(value: string | null | undefined) {
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return value;
   return `${month}/${day}/${year}`;
+}
+
+function formatDistance(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "Set load";
+  return `${formatNumber(value, 1)} mi`;
 }
 
 function escapeHtml(value: string | number | null | undefined) {
@@ -355,7 +360,13 @@ function parseKmlCoordinates(kml: string): MisoPoint[] {
   return polygon;
 }
 
-function parcelToFeature(parcel: MisoParcel): GeoJsonFeatureCollection {
+function parcelToFeature(parcel: MisoParcel | null): GeoJsonFeatureCollection {
+  if (!parcel) {
+    return {
+      type: "FeatureCollection",
+      features: [],
+    };
+  }
   return {
     type: "FeatureCollection",
     features: [
@@ -394,7 +405,7 @@ function projectsToFeatures(projects: ProjectWithDistance[]): GeoJsonFeatureColl
           transmissionOwner: project.transmissionOwner || "Not listed",
           targetCod: project.targetCod || "Not listed",
           codYear: project.codYear,
-          distanceMi: Number(project.distanceMi.toFixed(1)),
+          distanceMi: Number.isFinite(project.distanceMi) ? Number(project.distanceMi.toFixed(1)) : null,
         },
       })),
   };
@@ -437,7 +448,7 @@ function popupHtml(project: ProjectWithDistance) {
         <div><strong>Transmission owner:</strong> ${escapeHtml(project.transmissionOwner || "Not listed")}</div>
         <div><strong>Study:</strong> ${escapeHtml([project.studyCycle, project.studyGroup, project.studyPhase].filter(Boolean).join(" / ") || "Not listed")}</div>
         <div><strong>County/state:</strong> ${escapeHtml([project.county, project.state].filter(Boolean).join(", ") || "Not listed")}</div>
-        <div><strong>Straight-line distance:</strong> ${escapeHtml(formatNumber(project.distanceMi, 1))} mi</div>
+        <div><strong>Straight-line distance:</strong> ${escapeHtml(formatDistance(project.distanceMi))}</div>
         <div style="color:#475569; line-height:1.25; margin-top:4px;"><strong>Map position:</strong> ${escapeHtml(project.coordinateSource)}</div>
       </div>
     </div>
@@ -483,16 +494,17 @@ function numericFilterMatches(value: number | null | undefined, filter: string) 
   return current === target;
 }
 
-function fitBoundsFor(map: MapLibreMap, parcel: MisoParcel, projects: ProjectWithDistance[]) {
+function fitBoundsFor(map: MapLibreMap, parcel: MisoParcel | null, projects: ProjectWithDistance[]) {
   const points = [
-    ...parcel.polygon.map((point) => [point.lon, point.lat] as [number, number]),
+    ...(parcel ? parcel.polygon.map((point) => [point.lon, point.lat] as [number, number]) : []),
     ...projects
       .filter((project) => project.coordinates)
       .slice(0, 80)
       .map((project) => [project.coordinates!.lon, project.coordinates!.lat] as [number, number]),
   ];
   if (points.length < 2) {
-    map.flyTo({ center: [parcel.center.lon, parcel.center.lat], zoom: 7 });
+    const center = parcel?.center ?? DEFAULT_PARCEL.center;
+    map.flyTo({ center: [center.lon, center.lat], zoom: 5 });
     return;
   }
   const lons = points.map((point) => point[0]);
@@ -551,7 +563,7 @@ function MisoMap({
   highlightProjectIds,
 }: {
   projects: ProjectWithDistance[];
-  parcel: MisoParcel;
+  parcel: MisoParcel | null;
   selectedProject: ProjectWithDistance | null;
   onHoverProject: (project: ProjectWithDistance | null) => void;
   legendItems: Array<[string, string]>;
@@ -573,9 +585,10 @@ function MisoMap({
 
     loadMapLibre().then((maplibregl) => {
       if (disposed || !containerRef.current) return;
+      const mapCenter = parcel?.center ?? DEFAULT_PARCEL.center;
       const map = new maplibregl.Map({
         container: containerRef.current,
-        center: [parcel.center.lon, parcel.center.lat],
+        center: [mapCenter.lon, mapCenter.lat],
         zoom: 5,
         attributionControl: true,
         style: {
@@ -789,8 +802,8 @@ function MisoMap({
           <div className="mt-1 text-slate-300">
             {selectedProject.fuelType} near{" "}
             {[selectedProject.county, selectedProject.state].filter(Boolean).join(", ") ||
-              "location not listed"}{" "}
-            - {formatNumber(selectedProject.distanceMi, 1)} straight-line mi from parcel.
+              "location not listed"}
+            {parcel ? ` - ${formatNumber(selectedProject.distanceMi, 1)} straight-line mi from load` : " - set a load location for distance."}
           </div>
         </div>
       ) : null}
@@ -801,7 +814,7 @@ function MisoMap({
 export default function MisoInterconnectionPage() {
   const [data, setData] = useState<MisoInterconnectionData | null>(null);
   const [loadError, setLoadError] = useState("");
-  const [parcel, setParcel] = useState<MisoParcel>(DEFAULT_PARCEL);
+  const [parcel, setParcel] = useState<MisoParcel | null>(null);
   const [coordinateInput, setCoordinateInput] = useState("");
   const [uploadMessage, setUploadMessage] = useState("");
   const [selectedYear, setSelectedYear] = useState<number | "all">("all");
@@ -826,7 +839,6 @@ export default function MisoInterconnectionPage() {
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
-          setParcel(payload.parcel);
         }
       })
       .catch((error) => {
@@ -848,20 +860,20 @@ export default function MisoInterconnectionPage() {
       .filter((project) => (selectedYear === "all" ? true : project.codYear === selectedYear))
       .map((project) => ({
         ...project,
-        distanceMi: haversineMiles(parcel.center, project.coordinates!),
+        distanceMi: parcel ? haversineMiles(parcel.center, project.coordinates!) : Number.POSITIVE_INFINITY,
       }))
       .sort((a, b) => a.distanceMi - b.distanceMi);
-  }, [parcel.center, projects, selectedStatus, selectedYear]);
+  }, [parcel, projects, selectedStatus, selectedYear]);
 
   const allMappedActive = useMemo<ProjectWithDistance[]>(() => {
     return projects
       .filter((project) => project.status === "Active" && project.coordinates)
       .map((project) => ({
         ...project,
-        distanceMi: haversineMiles(parcel.center, project.coordinates!),
+        distanceMi: parcel ? haversineMiles(parcel.center, project.coordinates!) : Number.POSITIVE_INFINITY,
       }))
       .sort((a, b) => a.distanceMi - b.distanceMi);
-  }, [parcel.center, projects]);
+  }, [parcel, projects]);
 
   const nearbyProjects = useMemo(() => {
     const filtered = mappedProjects.filter(
@@ -908,7 +920,7 @@ export default function MisoInterconnectionPage() {
   }, [mappedProjects]);
 
   const mapProjects = useMemo(() => mappedProjects.slice(0, 1500), [mappedProjects]);
-  const nearestActive = allMappedActive[0] || null;
+  const nearestActive = parcel ? allMappedActive[0] || null : null;
   const activeTopTwentyTwoMw = allMappedActive
     .slice(0, 22)
     .reduce((sum, project) => sum + (project.mw || 0), 0);
@@ -987,7 +999,7 @@ export default function MisoInterconnectionPage() {
         polygon,
         center: centroid(polygon),
       });
-      setUploadMessage(`${file.name} loaded and set as the active parcel.`);
+      setUploadMessage(`${file.name} loaded and set as the active load location.`);
     } catch (error) {
       setUploadMessage(error instanceof Error ? error.message : "Could not read that file.");
     }
@@ -1008,15 +1020,19 @@ export default function MisoInterconnectionPage() {
       label: "Nearest Active",
       value: nearestActive
         ? `${nearestActive.projectNumber} (${formatMw(nearestActive.mw)})`
-        : "Not available",
+        : parcel
+          ? "Not available"
+          : "Set load",
       detail: nearestActive
         ? `${formatNumber(nearestActive.distanceMi, 1)} straight-line mi`
-        : "No mapped active projects",
+        : parcel
+          ? "No mapped active projects"
+          : "enter coordinates or KML/KMZ",
     },
     {
       label: "Nearest 22 Active",
-      value: `${formatNumber(activeTopTwentyTwoMw, 1)} MW`,
-      detail: "sum of the 22 closest mapped active positions",
+      value: parcel ? `${formatNumber(activeTopTwentyTwoMw, 1)} MW` : "Set load",
+      detail: parcel ? "sum of the 22 closest mapped active positions" : "enter coordinates or KML/KMZ",
     },
   ];
 
@@ -1029,11 +1045,11 @@ export default function MisoInterconnectionPage() {
               MISO generation interconnection
             </div>
             <h1 className="mt-2 text-3xl font-semibold tracking-normal text-white md:text-4xl">
-              MISO queue map for parcel screening
+              MISO generation + load matching
             </h1>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">
               Active and historical MISO generator interconnection projects from the public
-              queue, mapped against the current parcel with COD year filters, status filters,
+              queue, ready to match against user-entered load coordinates or KML/KMZ geometry with COD year filters, status filters,
               project hover details, and sortable nearby queue positions.
             </p>
           </div>
@@ -1096,7 +1112,7 @@ export default function MisoInterconnectionPage() {
           </div>
           <div>
             <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-              KML / KMZ parcel
+              KML / KMZ load area
             </label>
             <input
               accept=".kml,.kmz"
@@ -1107,13 +1123,13 @@ export default function MisoInterconnectionPage() {
           </div>
           <div className="text-sm text-slate-300">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-              Active parcel
+              Active load location
             </div>
-            <div className="mt-2 font-semibold text-white">{parcel.name}</div>
+            <div className="mt-2 font-semibold text-white">{parcel?.name ?? "No load location set"}</div>
             <div>
-              {parcel.center.lat.toFixed(6)}, {parcel.center.lon.toFixed(6)}
+              {parcel ? `${parcel.center.lat.toFixed(6)}, ${parcel.center.lon.toFixed(6)}` : "Enter coordinates or upload KML/KMZ"}
             </div>
-            <div className="mt-1 text-xs text-cyan-100">{uploadMessage || "Default parcel loaded."}</div>
+            <div className="mt-1 text-xs text-cyan-100">{uploadMessage || "No load location set."}</div>
           </div>
         </section>
 
@@ -1178,6 +1194,7 @@ export default function MisoInterconnectionPage() {
         <section className="mb-5">
           <AskMapPanel
             currentFilters={{
+              activeLocationSet: Boolean(parcel),
               codYear: selectedYear === "all" ? null : selectedYear,
               status: selectedStatus,
             }}
@@ -1187,7 +1204,7 @@ export default function MisoInterconnectionPage() {
               codDate: project.targetCod,
               codYear: project.codYear,
               county: project.county,
-              distanceMi: project.distanceMi,
+              distanceMi: parcel ? project.distanceMi : null,
               fuelType: project.fuelType,
               id: project.id,
               label: project.projectNumber,
@@ -1200,7 +1217,7 @@ export default function MisoInterconnectionPage() {
               state: project.state,
               status: project.status,
             }))}
-            sourceNotes={source.positionNote}
+            sourceNotes={`${source.positionNote} Distances are only available after a load location is set.`}
             theme="dark"
             totalProjectCount={stats.totalQueueProjects}
           />
@@ -1220,7 +1237,7 @@ export default function MisoInterconnectionPage() {
             <p className="mt-1">
               Hover a generation project to see MW capacity, status, queue date, withdrawn date
               when applicable, COD target, study cycle, POI, transmission owner, and distance from
-              the active parcel. Distances on this MISO page are straight-line distances because
+              the active load location. Distances on this MISO page are straight-line distances because
               public MISO queue rows do not include a line-following network path.
             </p>
             <p className="mt-2 text-xs text-slate-400">{source.positionNote}</p>
@@ -1289,7 +1306,7 @@ export default function MisoInterconnectionPage() {
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Nearby queue projects
+                {parcel ? "Nearby queue projects" : "Mapped queue projects"}
               </div>
               <h2 className="mt-1 text-xl font-semibold text-white">
                 {formatNumber(nearbyProjects.length)} mapped projects in current filters
@@ -1389,7 +1406,7 @@ export default function MisoInterconnectionPage() {
                     </td>
                     <td className="px-2 py-2">{project.status}</td>
                     <td className="px-2 py-2">{formatMw(project.mw)}</td>
-                    <td className="px-2 py-2">{formatNumber(project.distanceMi, 1)}</td>
+                    <td className="px-2 py-2">{parcel ? formatNumber(project.distanceMi, 1) : "Set load"}</td>
                     <td className="px-2 py-2">{project.codYear || "Not listed"}</td>
                     <td className="px-2 py-2">{formatDate(project.targetCod)}</td>
                     <td className="px-2 py-2">{project.poiName || "Not listed"}</td>
