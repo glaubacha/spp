@@ -3,6 +3,7 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { AskMapPanel, type MapQuestionResult } from "@/app/_components/AskMapPanel";
+import { MarketToggle } from "@/app/_components/MarketToggle";
 import { interconnectionData } from "@/data/interconnection-data";
 import {
   interconnectionFyiProjects,
@@ -1801,7 +1802,12 @@ export default function InterconnectionPage() {
       <section className="border-b border-[#d7d1c5] bg-[#fffaf0] px-6 py-6">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div />
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
+                Market
+              </p>
+              <MarketToggle active="spp" />
+            </div>
             <a
               className="inline-flex items-center justify-center rounded-md border border-[#b9aa90] px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
               href={interconnectionData.source.reportUrl}
