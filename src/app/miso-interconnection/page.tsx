@@ -130,7 +130,7 @@ type MapLibreMap = {
   getSource: (id: string) => { setData?: (data: GeoJsonFeatureCollection) => void } | undefined;
   off: (event: string, layer: string, handler: (event: MapEvent) => void) => void;
   on: {
-    (event: string, handler: () => void): void;
+    (event: string, handler: (event: MapEvent) => void): void;
     (event: string, layer: string, handler: (event: MapEvent) => void): void;
   };
   remove: () => void;
@@ -140,7 +140,7 @@ type MapEvent = {
   features?: Array<{
     properties?: Record<string, string | number | null>;
   }>;
-  lngLat: unknown;
+  lngLat: { lat: number; lng: number };
 };
 
 type MapLibreGlobal = {
@@ -566,6 +566,8 @@ function MisoMap({
   parcel,
   selectedProject,
   onHoverProject,
+  onPlacePin,
+  isPlacingPin,
   legendItems,
   highlightProjectIds,
 }: {
@@ -573,6 +575,8 @@ function MisoMap({
   parcel: MisoParcel | null;
   selectedProject: ProjectWithDistance | null;
   onHoverProject: (project: ProjectWithDistance | null) => void;
+  onPlacePin: (point: MisoPoint) => void;
+  isPlacingPin: boolean;
   legendItems: Array<[string, string]>;
   highlightProjectIds: string[];
 }) {
@@ -583,13 +587,23 @@ function MisoMap({
   const parcelRef = useRef(parcel);
   const highlightProjectIdsRef = useRef(highlightProjectIds);
   const onHoverProjectRef = useRef(onHoverProject);
+  const onPlacePinRef = useRef(onPlacePin);
+  const isPlacingPinRef = useRef(isPlacingPin);
 
   useEffect(() => {
     projectsRef.current = projects;
     parcelRef.current = parcel;
     highlightProjectIdsRef.current = highlightProjectIds;
     onHoverProjectRef.current = onHoverProject;
-  }, [highlightProjectIds, onHoverProject, projects, parcel]);
+    onPlacePinRef.current = onPlacePin;
+    isPlacingPinRef.current = isPlacingPin;
+  }, [highlightProjectIds, isPlacingPin, onHoverProject, onPlacePin, projects, parcel]);
+
+  useEffect(() => {
+    isPlacingPinRef.current = isPlacingPin;
+    const canvas = mapRef.current?.getCanvas();
+    if (canvas) canvas.style.cursor = isPlacingPin ? "crosshair" : "";
+  }, [isPlacingPin]);
 
   useEffect(() => {
     let disposed = false;
@@ -759,6 +773,10 @@ function MisoMap({
           onHoverProjectRef.current(null);
         };
 
+        map.on("click", (event: MapEvent) => {
+          if (!isPlacingPinRef.current) return;
+          onPlacePinRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+        });
         map.on("mousemove", "queue-project-hit", hoverHandler);
         map.on("mouseleave", "queue-project-hit", leaveHandler);
         fitBoundsFor(map, parcelRef.current, projectsRef.current);
@@ -830,6 +848,7 @@ export default function MisoInterconnectionPage() {
   const [parcel, setParcel] = useState<MisoParcel | null>(null);
   const [coordinateInput, setCoordinateInput] = useState("");
   const [uploadMessage, setUploadMessage] = useState("");
+  const [isPlacingPin, setIsPlacingPin] = useState(false);
   const [selectedYear, setSelectedYear] = useState<number | "all">("all");
   const [selectedStatus, setSelectedStatus] = useState("Active");
   const [hoveredProject, setHoveredProject] = useState<ProjectWithDistance | null>(null);
@@ -992,6 +1011,13 @@ export default function MisoInterconnectionPage() {
     }
     setParcel(makePointParcel("Input coordinates", point));
     setUploadMessage(`Parcel set to ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}.`);
+  }
+
+  function applyPinnedMapPoint(point: MisoPoint) {
+    setCoordinateInput(`${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}`);
+    setParcel(makePointParcel("Pinned load location", point));
+    setIsPlacingPin(false);
+    setUploadMessage(`Pinned load coordinate at ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}.`);
   }
 
   async function handleFileUpload(file: File | null) {
@@ -1187,13 +1213,38 @@ export default function MisoInterconnectionPage() {
                 value={coordinateInput}
               />
             </label>
-            <button
-              className="rounded-md border border-[#b9aa90] bg-white px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
-              onClick={applyCoordinateInput}
-              type="button"
-            >
-              Set Load
-            </button>
+            <div className="flex flex-wrap gap-2 lg:self-end">
+              <button
+                className="rounded-md border border-[#b9aa90] bg-white px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
+                onClick={applyCoordinateInput}
+                type="button"
+              >
+                Set Load
+              </button>
+              <button
+                className={`rounded-md border px-4 py-2 text-sm font-semibold transition ${
+                  isPlacingPin
+                    ? "border-[#2f4858] bg-[#2f4858] text-white"
+                    : "border-[#b9aa90] bg-white text-[#22313a] hover:bg-[#f0e7d6]"
+                }`}
+                onClick={() => {
+                  setIsPlacingPin((current) => {
+                    const next = !current;
+                    setUploadMessage(
+                      next
+                        ? "Pin mode is on. Click anywhere on the map to set the active load coordinate."
+                        : parcel
+                          ? "Pin mode cancelled. The existing active load location is still in use."
+                          : "No load location set.",
+                    );
+                    return next;
+                  });
+                }}
+                type="button"
+              >
+                {isPlacingPin ? "Cancel Pin" : "Place Pin"}
+              </button>
+            </div>
             <label className="block">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
                 KML / KMZ load area
@@ -1217,11 +1268,13 @@ export default function MisoInterconnectionPage() {
 
           <MisoMap
             highlightProjectIds={askHighlightIds}
+            isPlacingPin={isPlacingPin}
             legendItems={legendItems}
             parcel={parcel}
             projects={mapProjects}
             selectedProject={hoveredProject}
             onHoverProject={setHoveredProject}
+            onPlacePin={applyPinnedMapPoint}
           />
         </div>
 

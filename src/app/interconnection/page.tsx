@@ -1485,6 +1485,19 @@ function locatorCenterPoint(data: LocatorFeatureCollection): LonLat {
   return defaultParcelCenter;
 }
 
+function locatorDataForPoint(point: LonLat, name = "Pinned load location"): LocatorFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [point.lon, point.lat] },
+        properties: { name },
+      },
+    ],
+  };
+}
+
 function parseCoordinateInput(value: string): LocatorFeatureCollection {
   const numbers = value
     .trim()
@@ -2464,6 +2477,7 @@ function SatelliteInfrastructureMap({
   const [gasPipelineMessage, setGasPipelineMessage] = useState("Pipeline screening loads after a load location is set.");
   const [showExistingPlants, setShowExistingPlants] = useState(true);
   const [showGasPipelines, setShowGasPipelines] = useState(true);
+  const [isPlacingPin, setIsPlacingPin] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const popupRef = useRef<MapLibrePopup | null>(null);
@@ -2479,6 +2493,8 @@ function SatelliteInfrastructureMap({
   const gasPipelineRequestRef = useRef(0);
   const hifldCacheRef = useRef<Map<string, HifldAttributes | undefined>>(new Map());
   const hoverKeyRef = useRef("");
+  const isPlacingPinRef = useRef(false);
+  const placePinAtRef = useRef<(point: LonLat) => void>(() => {});
   const visibleTypeColors = useMemo(() => {
     const visibleTypes = new Set<string>(projects.map((project) => project.generationType));
     return Object.entries(typeColors).filter(([type]) => visibleTypes.has(type));
@@ -2560,6 +2576,21 @@ function SatelliteInfrastructureMap({
     setLocatorMessage(`${message} This is now the active load location on the map.`);
   };
 
+  useEffect(() => {
+    isPlacingPinRef.current = isPlacingPin;
+    const canvas = mapRef.current?.getCanvas();
+    if (canvas) canvas.style.cursor = isPlacingPin ? "crosshair" : "";
+    setLocatorMessage((current) => {
+      if (isPlacingPin) return "Pin mode is on. Click anywhere on the map to set the active load coordinate.";
+      if (current === "Pin mode is on. Click anywhere on the map to set the active load coordinate.") {
+        return hasActiveParcelRef.current
+          ? "Pin mode cancelled. The existing active load location is still in use."
+          : "No load location set. Enter coordinates, upload KML/KMZ, or place a pin on the map.";
+      }
+      return current;
+    });
+  }, [isPlacingPin]);
+
   const handleCoordinateSubmit = () => {
     try {
       applyLocatorData(parseCoordinateInput(coordinateInput), "Zoomed to input coordinates.");
@@ -2577,6 +2608,17 @@ function SatelliteInfrastructureMap({
       setLocatorMessage(error instanceof Error ? error.message : "Could not parse that file.");
     }
   };
+
+  const placePinAt = (point: LonLat) => {
+    const message = `Pinned load coordinate at ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}.`;
+    setCoordinateInput(`${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}`);
+    setIsPlacingPin(false);
+    applyLocatorData(locatorDataForPoint(point), message);
+  };
+
+  useEffect(() => {
+    placePinAtRef.current = placePinAt;
+  });
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -2998,7 +3040,14 @@ function SatelliteInfrastructureMap({
           },
         });
 
+        map.on("click", (event) => {
+          if (!isPlacingPinRef.current) return;
+          if (!event) return;
+          placePinAtRef.current({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+        });
+
         map.on("click", "queue-projects", (event) => {
+          if (isPlacingPinRef.current) return;
           const projectId = String(event.features?.[0]?.properties?.id ?? "");
           if (!projectId || !window.maplibregl || !map) return;
 
@@ -3038,6 +3087,7 @@ function SatelliteInfrastructureMap({
         });
 
         map.on("click", "existing-power-plant-clusters", (event) => {
+          if (isPlacingPinRef.current) return;
           if (!map) return;
           map.easeTo?.({
             center: [event.lngLat.lng, event.lngLat.lat],
@@ -3112,6 +3162,7 @@ function SatelliteInfrastructureMap({
           plantHoverPopup.remove();
         });
         map.on("click", "existing-power-plants", (event) => {
+          if (isPlacingPinRef.current) return;
           showExistingPlantPopup(event, true);
         });
 
@@ -3281,13 +3332,26 @@ function SatelliteInfrastructureMap({
             value={coordinateInput}
           />
         </label>
-        <button
-          className="rounded-md border border-[#b9aa90] bg-white px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
-          onClick={handleCoordinateSubmit}
-          type="button"
-        >
-          Set Load
-        </button>
+        <div className="flex flex-wrap gap-2 lg:self-end">
+          <button
+            className="rounded-md border border-[#b9aa90] bg-white px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
+            onClick={handleCoordinateSubmit}
+            type="button"
+          >
+            Set Load
+          </button>
+          <button
+            className={`rounded-md border px-4 py-2 text-sm font-semibold transition ${
+              isPlacingPin
+                ? "border-[#2f4858] bg-[#2f4858] text-white"
+                : "border-[#b9aa90] bg-white text-[#22313a] hover:bg-[#f0e7d6]"
+            }`}
+            onClick={() => setIsPlacingPin((current) => !current)}
+            type="button"
+          >
+            {isPlacingPin ? "Cancel Pin" : "Place Pin"}
+          </button>
+        </div>
         <label className="block">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
             KML / KMZ load area
