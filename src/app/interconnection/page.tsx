@@ -1801,13 +1801,7 @@ export default function InterconnectionPage() {
       <section className="border-b border-[#d7d1c5] bg-[#fffaf0] px-6 py-6">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="max-w-3xl text-sm leading-6 text-[#48525a]">
-                Enter a load location or upload a KML/KMZ parcel to compare it against decoded generation queue points from
-                all four PowerBI report pages. Distances calculate after a location is set, using the shortest available
-                public power-line path with straight-line fallback.
-              </p>
-            </div>
+            <div />
             <a
               className="inline-flex items-center justify-center rounded-md border border-[#b9aa90] px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
               href={interconnectionData.source.reportUrl}
