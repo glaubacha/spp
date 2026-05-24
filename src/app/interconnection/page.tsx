@@ -31,6 +31,7 @@ type MisoQueueStats = {
   activeMw: number;
   activeProjects: number;
 };
+type GasPipelineStatus = "error" | "idle" | "loaded" | "loading";
 type ElectricalDistanceEstimate = {
   electricalMiles?: number;
   electricalMilesExact?: number;
@@ -74,6 +75,17 @@ type LineFeatureCollection = {
         };
     properties: Record<string, string | number | boolean | null>;
   }>;
+  properties?: {
+    displayedFeatures?: number;
+    radiusMiles?: number;
+    sourceStatus?: Array<{
+      error: string | null;
+      features: number;
+      ok: boolean;
+      sourceName: string;
+    }>;
+    totalMatchedFeatures?: number;
+  };
 };
 type GeoJsonSourcePayload = string | GeoJsonFeatureCollection | LineFeatureCollection | LocatorFeatureCollection;
 type LocatorFeatureCollection = {
@@ -2474,6 +2486,7 @@ function SatelliteInfrastructureMap({
   const [coordinateInput, setCoordinateInput] = useState("");
   const [locatorMessage, setLocatorMessage] = useState("No load location set. Enter coordinates or upload KML/KMZ to start matching generation to load.");
   const [gasPipelineCount, setGasPipelineCount] = useState(0);
+  const [gasPipelineStatus, setGasPipelineStatus] = useState<GasPipelineStatus>("idle");
   const [gasPipelineMessage, setGasPipelineMessage] = useState("Pipeline screening loads after a load location is set.");
   const [showExistingPlants, setShowExistingPlants] = useState(true);
   const [showGasPipelines, setShowGasPipelines] = useState(true);
@@ -2499,6 +2512,14 @@ function SatelliteInfrastructureMap({
     const visibleTypes = new Set<string>(projects.map((project) => project.generationType));
     return Object.entries(typeColors).filter(([type]) => visibleTypes.has(type));
   }, [projects]);
+  const gasPipelineCountLabel =
+    gasPipelineStatus === "loading"
+      ? "Loading"
+      : gasPipelineStatus === "error"
+        ? "Unavailable"
+        : hasActiveParcel
+          ? gasPipelineCount.toLocaleString()
+          : "Set load";
 
   const refreshElectricalDistances = (map: MapLibreMap | null, parcelCenter: LonLat) => {
     const requestId = distanceRequestRef.current + 1;
@@ -2542,18 +2563,26 @@ function SatelliteInfrastructureMap({
   const refreshGasPipelines = (map: MapLibreMap | null, parcelCenter: LonLat) => {
     const requestId = gasPipelineRequestRef.current + 1;
     gasPipelineRequestRef.current = requestId;
+    setGasPipelineStatus("loading");
     setGasPipelineMessage(`Loading gas and hazardous-liquid pipeline screening layers within ${gasPipelines.dataRadiusMiles} miles of the active load location...`);
     void fetchGasPipelineFeatureCollection(parcelCenter)
       .then((data) => {
         if (gasPipelineRequestRef.current !== requestId) return;
-        setGasPipelineCount(data.features.length);
+        const displayedFeatures = data.features.length;
+        const totalMatchedFeatures = data.properties?.totalMatchedFeatures ?? displayedFeatures;
+        const failedSources = data.properties?.sourceStatus?.filter((source) => !source.ok) ?? [];
+        setGasPipelineStatus("loaded");
+        setGasPipelineCount(totalMatchedFeatures);
         setGasPipelineMessage(
-          `Loaded ${data.features.length} pipeline segments within ${gasPipelines.dataRadiusMiles} miles of the active load location.`,
+          failedSources.length > 0 && displayedFeatures > 0
+            ? `Loaded ${displayedFeatures.toLocaleString()} nearest pipeline segments (${totalMatchedFeatures.toLocaleString()} matched) within ${gasPipelines.dataRadiusMiles} miles; ${failedSources.length} public source did not respond.`
+            : `Loaded ${displayedFeatures.toLocaleString()} nearest pipeline segments (${totalMatchedFeatures.toLocaleString()} matched) within ${gasPipelines.dataRadiusMiles} miles of the active load location.`,
         );
         map?.getSource(gasPipelineSourceId)?.setData?.(data);
       })
       .catch(() => {
         if (gasPipelineRequestRef.current !== requestId) return;
+        setGasPipelineStatus("error");
         setGasPipelineCount(0);
         setGasPipelineMessage("Pipeline screening layers could not be loaded from the public source services.");
         map?.getSource(gasPipelineSourceId)?.setData?.(emptyLineFeatureCollection);
@@ -3397,7 +3426,7 @@ function SatelliteInfrastructureMap({
               type="checkbox"
             />
             <span className="font-semibold">Pipelines</span>
-            <span className="text-white/70">{gasPipelineCount}</span>
+            <span className="text-white/70">{gasPipelineCountLabel}</span>
           </label>
         </div>
         <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[17rem] rounded border border-white/20 bg-black/65 p-2 text-[0.65rem] leading-4 text-white shadow-lg">

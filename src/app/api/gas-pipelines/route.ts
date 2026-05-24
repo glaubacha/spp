@@ -5,6 +5,29 @@ type ArcGisFeature = {
   attributes?: Record<string, string | number | null>;
   geometry?: { paths?: unknown };
 };
+type PipelineFeature = {
+  type: "Feature";
+  geometry:
+    | {
+        type: "LineString";
+        coordinates: Array<[number, number]>;
+      }
+    | {
+        type: "MultiLineString";
+        coordinates: Array<Array<[number, number]>>;
+      };
+  properties: {
+    category: "Hazardous liquid / HGL" | "Natural gas";
+    distanceMiles: number | null;
+    lineLengthMiles: number | null;
+    objectid: string;
+    operator: string;
+    pipelineName: string;
+    sourceName: string;
+    sourceUnits: "feet" | "meters";
+    typepipe: string;
+  };
+};
 type PipelineSource = {
   category: "Hazardous liquid / HGL" | "Natural gas";
   endpoint: string;
@@ -45,6 +68,7 @@ const hazardousLiquidSource: PipelineSource = {
 };
 
 const pageSize = 2000;
+const maxReturnedFeatures = 600;
 
 function isCoordinate(value: unknown): value is [number, number] {
   return (
@@ -141,8 +165,8 @@ function roundMiles(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-async function fetchPipelineSource(source: PipelineSource, center: LonLat, radiusMiles: number) {
-  const features = [];
+async function fetchPipelineSource(source: PipelineSource, center: LonLat, radiusMiles: number): Promise<PipelineFeature[]> {
+  const features: PipelineFeature[] = [];
   const seen = new Set<string>();
 
   for (let page = 0; page < source.maxPages; page += 1) {
@@ -209,6 +233,23 @@ async function fetchPipelineSource(source: PipelineSource, center: LonLat, radiu
   return features;
 }
 
+async function settledPipelineSource(source: PipelineSource, center: LonLat, radiusMiles: number) {
+  try {
+    return {
+      features: await fetchPipelineSource(source, center, radiusMiles),
+      ok: true,
+      sourceName: source.sourceName,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : `Could not load ${source.sourceName}`,
+      features: [] as PipelineFeature[],
+      ok: false,
+      sourceName: source.sourceName,
+    };
+  }
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const lat = Number(url.searchParams.get("lat"));
@@ -221,20 +262,29 @@ export async function GET(request: Request) {
   }
 
   const center = { lat, lon };
-  const [naturalGas, hazardousLiquid] = await Promise.all([
-    fetchPipelineSource(naturalGasSource, center, radiusMiles),
-    fetchPipelineSource(hazardousLiquidSource, center, radiusMiles),
+  const sourceResults = await Promise.all([
+    settledPipelineSource(naturalGasSource, center, radiusMiles),
+    settledPipelineSource(hazardousLiquidSource, center, radiusMiles),
   ]);
-  const features = [...naturalGas, ...hazardousLiquid].sort(
+  const allFeatures = sourceResults.flatMap((result) => result.features).sort(
     (a, b) => Number(a.properties.distanceMiles ?? Infinity) - Number(b.properties.distanceMiles ?? Infinity),
   );
+  const features = allFeatures.slice(0, maxReturnedFeatures);
 
   return NextResponse.json({
     type: "FeatureCollection",
     features,
     properties: {
+      displayedFeatures: features.length,
       highLevelScreen: "Use NPMS Public Viewer first for gas transmission and hazardous-liquid pipeline screening.",
       radiusMiles,
+      sourceStatus: sourceResults.map((result) => ({
+        error: result.ok ? null : result.error,
+        features: result.features.length,
+        ok: result.ok,
+        sourceName: result.sourceName,
+      })),
+      totalMatchedFeatures: allFeatures.length,
       warning:
         "Pipeline layers are for high-level screening only and must not be used to identify exact pipeline locations or as a substitute for One Call or operator coordination.",
     },
