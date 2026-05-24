@@ -3,6 +3,8 @@
 import JSZip from "jszip";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AskMapPanel, type MapQuestionResult } from "@/app/_components/AskMapPanel";
+
 type MisoPoint = {
   lat: number;
   lon: number;
@@ -398,6 +400,29 @@ function projectsToFeatures(projects: ProjectWithDistance[]): GeoJsonFeatureColl
   };
 }
 
+function highlightedProjectsToFeatures(
+  projects: ProjectWithDistance[],
+  highlightIds: string[],
+): GeoJsonFeatureCollection {
+  const highlightSet = new Set(highlightIds);
+  return {
+    type: "FeatureCollection",
+    features: projects
+      .filter((project) => project.coordinates && highlightSet.has(project.id))
+      .map((project) => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [project.coordinates!.lon, project.coordinates!.lat],
+        },
+        properties: {
+          id: project.id,
+          projectNumber: project.projectNumber,
+        },
+      })),
+  };
+}
+
 function popupHtml(project: ProjectWithDistance) {
   return `
     <div style="font-family: Aptos, Segoe UI, sans-serif; min-width: 260px; color: #0f172a;">
@@ -523,12 +548,14 @@ function MisoMap({
   selectedProject,
   onHoverProject,
   legendItems,
+  highlightProjectIds,
 }: {
   projects: ProjectWithDistance[];
   parcel: MisoParcel;
   selectedProject: ProjectWithDistance | null;
   onHoverProject: (project: ProjectWithDistance | null) => void;
   legendItems: Array<[string, string]>;
+  highlightProjectIds: string[];
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -620,6 +647,10 @@ function MisoMap({
           type: "geojson",
           data: projectsToFeatures(projectsRef.current),
         });
+        map.addSource("highlighted-projects", {
+          type: "geojson",
+          data: highlightedProjectsToFeatures(projectsRef.current, highlightProjectIds),
+        });
         map.addLayer({
           id: "queue-project-hit",
           type: "circle",
@@ -677,6 +708,18 @@ function MisoMap({
             "text-halo-width": 1.5,
           },
         });
+        map.addLayer({
+          id: "highlighted-project-rings",
+          type: "circle",
+          source: "highlighted-projects",
+          paint: {
+            "circle-color": "rgba(0,0,0,0)",
+            "circle-radius": 24,
+            "circle-stroke-color": "#f97316",
+            "circle-stroke-width": 5,
+            "circle-opacity": 0.95,
+          },
+        });
 
         const hoverHandler = (event: MapEvent) => {
           const id = event.features?.[0]?.properties?.id;
@@ -711,9 +754,12 @@ function MisoMap({
     const map = mapRef.current;
     if (!map) return;
     map.getSource("queue-projects")?.setData?.(projectsToFeatures(projects));
+    map.getSource("highlighted-projects")?.setData?.(
+      highlightedProjectsToFeatures(projects, highlightProjectIds),
+    );
     map.getSource("parcel")?.setData?.(parcelToFeature(parcel));
     fitBoundsFor(map, parcel, projects);
-  }, [projects, parcel]);
+  }, [highlightProjectIds, projects, parcel]);
 
   return (
     <div className="relative min-h-[720px] overflow-hidden rounded-lg border border-white/15 bg-slate-950 shadow-2xl">
@@ -761,6 +807,7 @@ export default function MisoInterconnectionPage() {
   const [selectedYear, setSelectedYear] = useState<number | "all">("all");
   const [selectedStatus, setSelectedStatus] = useState("Active");
   const [hoveredProject, setHoveredProject] = useState<ProjectWithDistance | null>(null);
+  const [askHighlightIds, setAskHighlightIds] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("distanceMi");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -877,6 +924,35 @@ export default function MisoInterconnectionPage() {
 
   function updateFilter(key: keyof Filters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyMapQuestion(result: MapQuestionResult) {
+    setAskHighlightIds(result.highlightProjectIds);
+    setFilters((current) => ({
+      ...current,
+      cod: result.filters.codYear ?? current.cod,
+      distance:
+        result.filters.radiusMiles !== null ? `<${result.filters.radiusMiles}` : current.distance,
+      fuel: result.filters.fuelType ?? current.fuel,
+      mw:
+        result.filters.minMw !== null
+          ? `>${result.filters.minMw}`
+          : result.filters.maxMw !== null
+            ? `<${result.filters.maxMw}`
+            : current.mw,
+      owner: result.filters.owner ?? current.owner,
+      poi: result.filters.poi ?? current.poi,
+    }));
+    if (result.filters.codYear) {
+      const year = Number(result.filters.codYear);
+      if (Number.isFinite(year) && stats.codYears.includes(year)) setSelectedYear(year);
+    }
+    if (result.filters.status) {
+      const status = STATUS_OPTIONS.find(
+        (option) => option.toLowerCase() === result.filters.status?.toLowerCase(),
+      );
+      if (status) setSelectedStatus(status);
+    }
   }
 
   function applyCoordinateInput() {
@@ -1100,7 +1176,39 @@ export default function MisoInterconnectionPage() {
         </section>
 
         <section className="mb-5">
+          <AskMapPanel
+            currentFilters={{
+              codYear: selectedYear === "all" ? null : selectedYear,
+              status: selectedStatus,
+            }}
+            datasetName="MISO generation interconnection queue"
+            onApply={applyMapQuestion}
+            projects={mappedProjects.map((project) => ({
+              codDate: project.targetCod,
+              codYear: project.codYear,
+              county: project.county,
+              distanceMi: project.distanceMi,
+              fuelType: project.fuelType,
+              id: project.id,
+              label: project.projectNumber,
+              mw: project.mw,
+              owner: project.transmissionOwner || "Not listed",
+              poi: project.poiName || "Not listed",
+              queueStage: [project.studyCycle, project.studyGroup, project.studyPhase]
+                .filter(Boolean)
+                .join(" / "),
+              state: project.state,
+              status: project.status,
+            }))}
+            sourceNotes={source.positionNote}
+            theme="dark"
+            totalProjectCount={stats.totalQueueProjects}
+          />
+        </section>
+
+        <section className="mb-5">
           <MisoMap
+            highlightProjectIds={askHighlightIds}
             legendItems={legendItems}
             parcel={parcel}
             projects={mapProjects}

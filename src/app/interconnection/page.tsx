@@ -2,6 +2,7 @@
 
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
+import { AskMapPanel, type MapQuestionResult } from "@/app/_components/AskMapPanel";
 import { interconnectionData } from "@/data/interconnection-data";
 import {
   interconnectionFyiProjects,
@@ -1722,6 +1723,29 @@ export default function InterconnectionPage() {
       ),
     [activeParcelCenter, electricalDistances, nearbyProjectFilters, visibleNearbyProjects],
   );
+  const askMapProjects = useMemo(
+    () =>
+      visibleProjects.map((project) => {
+        const interconnectionFyi = interconnectionFyiFor(project);
+        return {
+          codDate: targetCommercialOperationDateValue(interconnectionFyi, project) ?? null,
+          codYear: projectYear(project),
+          county: project.town,
+          distanceMi: geospatialMilesExactFromParcel(project, activeParcelCenter),
+          electricalDistanceMi: electricalMilesForProject(project, electricalDistances) ?? null,
+          fuelType: generationTypeLabel(project.generationType),
+          id: project.id,
+          label: project.id,
+          mw: project.capacityMw,
+          owner: ownerEntityLabel(interconnectionFyi),
+          poi: project.poi,
+          queueStage: project.queueStage,
+          state: project.state,
+          status: interconnectionFyiStatusLabel(interconnectionFyi, project.status),
+        };
+      }),
+    [activeParcelCenter, electricalDistances, visibleProjects],
+  );
   const allNearbyProjects = useMemo(
     () => projectsFor("nearby", "all", activeParcelCenter, electricalDistances),
     [activeParcelCenter, electricalDistances],
@@ -1751,6 +1775,26 @@ export default function InterconnectionPage() {
   const selectedGridMetric = selected ? sppStudyGridMetrics[selected.id] : undefined;
   const selectedInterconnectionFyi = selected ? interconnectionFyiFor(selected) : undefined;
   const selectedNetworkCost = selected ? networkUpgradeCostFor(selected) : undefined;
+
+  function applyMapQuestion(result: MapQuestionResult) {
+    if (result.highlightProjectIds.length > 0) {
+      setSelectedId(result.highlightProjectIds[0]);
+    }
+    if (result.filters.codYear && yearOptions.includes(result.filters.codYear)) {
+      setSelectedYear(result.filters.codYear);
+    }
+    if (result.filters.radiusMiles !== null) {
+      setMode("nearby");
+      setNearbyProjectFilters((current) => ({
+        ...current,
+        electricalMax: String(result.filters.radiusMiles),
+        straightMax: String(result.filters.radiusMiles),
+      }));
+    }
+    if (result.filters.minMw !== null || result.filters.maxMw !== null) {
+      setSelectedId(result.tableProjectIds[0] ?? result.highlightProjectIds[0] ?? selectedId);
+    }
+  }
 
   useEffect(() => {
     if (selectedYear !== "all" && !yearOptions.includes(selectedYear)) setSelectedYear("all");
@@ -1812,6 +1856,19 @@ export default function InterconnectionPage() {
       </section>
 
       <section className="mx-auto max-w-7xl space-y-5 px-6 pb-6">
+        <AskMapPanel
+          currentFilters={{
+            codYear: selectedYear === "all" ? null : selectedYear,
+            mapMode: mode,
+          }}
+          datasetName="SPP generation interconnection queue"
+          onApply={applyMapQuestion}
+          projects={askMapProjects}
+          sourceNotes="SPP rows are decoded from the public PowerBI report and enriched where public sources are available. Distance uses electrical path estimates when available with straight-line fallback."
+          theme="light"
+          totalProjectCount={interconnectionData.stats.totalDecodedProjects}
+        />
+
         <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-[#e5ded2] p-4 md:flex-row md:items-center md:justify-between">
             <div>
