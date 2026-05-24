@@ -1802,13 +1802,7 @@ export default function InterconnectionPage() {
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7b5d2a]">
-                Generation + Load Matching Game
-              </p>
-              <h1 className="mt-2 text-3xl font-semibold text-[#172026] md:text-4xl">
-                Generation + Load Matching Game
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#48525a]">
+              <p className="max-w-3xl text-sm leading-6 text-[#48525a]">
                 Enter a load location or upload a KML/KMZ parcel to compare it against decoded generation queue points from
                 all four PowerBI report pages. Distances calculate after a location is set, using the shortest available
                 public power-line path with straight-line fallback.
