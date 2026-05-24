@@ -107,6 +107,11 @@ type Filters = {
   cod: string;
 };
 
+type BreakdownItem = {
+  count: number;
+  name: string;
+};
+
 type MapLibrePopup = {
   setLngLat: (lngLat: unknown) => MapLibrePopup;
   setHTML: (html: string) => MapLibrePopup;
@@ -207,6 +212,7 @@ const EMPTY_STATS: MisoInterconnectionData["stats"] = {
   codYears: [],
   studyCycles: [],
 };
+const EMPTY_PROJECTS: MisoQueueProject[] = [];
 
 const FUEL_COLORS: Record<string, string> = {
   Solar: "#facc15",
@@ -575,18 +581,22 @@ function MisoMap({
   const popupRef = useRef<MapLibrePopup | null>(null);
   const projectsRef = useRef<ProjectWithDistance[]>(projects);
   const parcelRef = useRef(parcel);
+  const highlightProjectIdsRef = useRef(highlightProjectIds);
+  const onHoverProjectRef = useRef(onHoverProject);
 
   useEffect(() => {
     projectsRef.current = projects;
     parcelRef.current = parcel;
-  }, [projects, parcel]);
+    highlightProjectIdsRef.current = highlightProjectIds;
+    onHoverProjectRef.current = onHoverProject;
+  }, [highlightProjectIds, onHoverProject, projects, parcel]);
 
   useEffect(() => {
     let disposed = false;
 
     loadMapLibre().then((maplibregl) => {
       if (disposed || !containerRef.current) return;
-      const mapCenter = parcel?.center ?? DEFAULT_PARCEL.center;
+      const mapCenter = parcelRef.current?.center ?? DEFAULT_PARCEL.center;
       const map = new maplibregl.Map({
         container: containerRef.current,
         center: [mapCenter.lon, mapCenter.lat],
@@ -663,7 +673,7 @@ function MisoMap({
         });
         map.addSource("highlighted-projects", {
           type: "geojson",
-          data: highlightedProjectsToFeatures(projectsRef.current, highlightProjectIds),
+          data: highlightedProjectsToFeatures(projectsRef.current, highlightProjectIdsRef.current),
         });
         map.addLayer({
           id: "queue-project-hit",
@@ -741,12 +751,12 @@ function MisoMap({
           if (!project || !popupRef.current) return;
           map.getCanvas().style.cursor = "pointer";
           popupRef.current.setLngLat(event.lngLat).setHTML(popupHtml(project)).addTo(map);
-          onHoverProject(project);
+          onHoverProjectRef.current(project);
         };
         const leaveHandler = () => {
           map.getCanvas().style.cursor = "";
           popupRef.current?.remove();
-          onHoverProject(null);
+          onHoverProjectRef.current(null);
         };
 
         map.on("mousemove", "queue-project-hit", hoverHandler);
@@ -776,38 +786,40 @@ function MisoMap({
   }, [highlightProjectIds, projects, parcel]);
 
   return (
-    <div className="relative min-h-[720px] overflow-hidden rounded-lg border border-white/15 bg-slate-950 shadow-2xl">
-      <div ref={containerRef} className="absolute inset-0" />
-      <div className="absolute left-3 top-3 max-w-[230px] rounded-md border border-slate-200/25 bg-slate-950/88 p-2 text-[0.68rem] leading-tight text-slate-100 shadow-xl backdrop-blur">
-        <div className="mb-1.5 font-semibold">Map key</div>
-        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-          {legendItems.map(([fuel, color]) => (
-            <div key={fuel} className="flex items-center gap-1.5">
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/80"
-                style={{ backgroundColor: color }}
-              />
-              <span className="truncate">{fuel}</span>
+    <div className="relative bg-[#111827] p-3">
+      <div className="relative h-[34rem] w-full overflow-hidden rounded-md">
+        <div ref={containerRef} className="absolute inset-0" />
+        <div className="absolute left-3 top-3 max-w-[230px] rounded-md border border-slate-200/25 bg-slate-950/88 p-2 text-[0.68rem] leading-tight text-slate-100 shadow-xl backdrop-blur">
+          <div className="mb-1.5 font-semibold">Map key</div>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+            {legendItems.map(([fuel, color]) => (
+              <div key={fuel} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/80"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="truncate">{fuel}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 border-t border-white/15 pt-1.5 text-[0.62rem] text-slate-300">
+            White ring = active. Orange ring = withdrawn. Green ring = done.
+          </div>
+        </div>
+        {selectedProject ? (
+          <div className="absolute bottom-3 left-3 max-w-sm rounded-md border border-white/15 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-xl backdrop-blur">
+            <div className="font-semibold">
+              {selectedProject.projectNumber} ({formatMw(selectedProject.mw)})
             </div>
-          ))}
-        </div>
-        <div className="mt-2 border-t border-white/15 pt-1.5 text-[0.62rem] text-slate-300">
-          White ring = active. Orange ring = withdrawn. Green ring = done.
-        </div>
+            <div className="mt-1 text-slate-300">
+              {selectedProject.fuelType} near{" "}
+              {[selectedProject.county, selectedProject.state].filter(Boolean).join(", ") ||
+                "location not listed"}
+              {parcel ? ` - ${formatNumber(selectedProject.distanceMi, 1)} straight-line mi from load` : " - set a load location for distance."}
+            </div>
+          </div>
+        ) : null}
       </div>
-      {selectedProject ? (
-        <div className="absolute bottom-3 left-3 max-w-sm rounded-md border border-white/15 bg-slate-950/90 p-3 text-xs text-slate-100 shadow-xl backdrop-blur">
-          <div className="font-semibold">
-            {selectedProject.projectNumber} ({formatMw(selectedProject.mw)})
-          </div>
-          <div className="mt-1 text-slate-300">
-            {selectedProject.fuelType} near{" "}
-            {[selectedProject.county, selectedProject.state].filter(Boolean).join(", ") ||
-              "location not listed"}
-            {parcel ? ` - ${formatNumber(selectedProject.distanceMi, 1)} straight-line mi from load` : " - set a load location for distance."}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -827,8 +839,7 @@ export default function MisoInterconnectionPage() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const stats = data?.stats ?? EMPTY_STATS;
   const source = data?.source ?? MISO_SOURCE;
-  const projects = data?.projects ?? [];
-  const countySummaries = data?.countySummaries ?? [];
+  const projects = data?.projects ?? EMPTY_PROJECTS;
 
   useEffect(() => {
     let cancelled = false;
@@ -925,6 +936,9 @@ export default function MisoInterconnectionPage() {
   const activeTopTwentyTwoMw = allMappedActive
     .slice(0, 22)
     .reduce((sum, project) => sum + (project.mw || 0), 0);
+  const nearbyByStage = useMemo(() => breakdownByMisoStage(nearbyProjects), [nearbyProjects]);
+  const nearbyByType = useMemo(() => breakdownMisoMwByType(nearbyProjects), [nearbyProjects]);
+  const clusterSummaries = useMemo(() => summarizeMisoClusters(nearbyProjects), [nearbyProjects]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -1009,13 +1023,13 @@ export default function MisoInterconnectionPage() {
   const metricCards = [
     {
       label: "Active MISO Queue",
-      value: data ? formatNumber(stats.activeProjects) : "Loading",
-      detail: data ? `${formatNumber(stats.activeMw, 1)} MW` : "Fetching public queue data",
+      value: loadError ? "Error" : data ? formatNumber(stats.activeProjects) : "Loading",
+      detail: loadError || (data ? `${formatNumber(stats.activeMw, 1)} MW` : "Fetching public queue data"),
     },
     {
       label: "Mapped Active",
-      value: data ? formatNumber(stats.mappedActiveProjects) : "Loading",
-      detail: "county or state-derived map positions",
+      value: loadError ? "Error" : data ? formatNumber(stats.mappedActiveProjects) : "Loading",
+      detail: loadError || "county or state-derived map positions",
     },
     {
       label: "Nearest Active",
@@ -1036,6 +1050,7 @@ export default function MisoInterconnectionPage() {
       detail: parcel ? "sum of the 22 closest mapped active positions" : "enter coordinates or KML/KMZ",
     },
   ];
+  const selectedForPanel = hoveredProject ?? mapProjects[0] ?? null;
 
   return (
     <main className="min-h-screen bg-[#f7f5ef] text-[#172026]">
@@ -1070,74 +1085,68 @@ export default function MisoInterconnectionPage() {
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl space-y-5 px-6 py-5">
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {metricCards.map((card) => (
-            <div key={card.label} className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">{card.label}</div>
-              <div className="mt-2 text-2xl font-semibold text-[#172026]">{card.value}</div>
-              <div className="mt-1 text-sm text-[#66727a]">{card.detail}</div>
-            </div>
-          ))}
-        </section>
+      <section className="mx-auto grid max-w-7xl gap-4 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
+        {metricCards.map((card) => (
+          <MetricCard key={card.label} detail={card.detail} label={card.label} value={card.value} />
+        ))}
+      </section>
 
-        <section className="grid gap-4 rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm xl:grid-cols-[1.4fr_1fr_1fr]">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-              Input coordinates
-            </label>
-            <div className="mt-2 flex gap-2">
-              <input
-                className="min-w-0 flex-1 rounded-md border border-[#cfc5b6] bg-white px-3 py-2 text-sm text-[#172026] outline-none transition placeholder:text-[#8a8175] focus:border-[#7b5d2a]"
-                placeholder="36.517955, -101.326008"
-                value={coordinateInput}
-                onChange={(event) => setCoordinateInput(event.target.value)}
-              />
-              <button
-                className="rounded-md border border-[#b9aa90] bg-white px-3 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
-                onClick={applyCoordinateInput}
-                type="button"
-              >
-                Zoom
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-              KML / KMZ load area
-            </label>
-            <input
-              accept=".kml,.kmz"
-              className="mt-2 block w-full rounded-md border border-[#cfc5b6] bg-white px-3 py-2 text-sm text-[#172026] file:mr-3 file:rounded file:border-0 file:bg-[#2f4858] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
-              type="file"
-              onChange={(event) => handleFileUpload(event.target.files?.[0] || null)}
-            />
-          </div>
-          <div className="text-sm text-[#66727a]">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-              Active load location
-            </div>
-            <div className="mt-2 font-semibold text-[#172026]">{parcel?.name ?? "No load location set"}</div>
-            <div>
-              {parcel ? `${parcel.center.lat.toFixed(6)}, ${parcel.center.lon.toFixed(6)}` : "Enter coordinates or upload KML/KMZ"}
-            </div>
-            <div className="mt-1 text-xs text-[#7b5d2a]">{uploadMessage || "No load location set."}</div>
-          </div>
-        </section>
+      <section className="mx-auto max-w-7xl space-y-5 px-6 pb-6">
+        <AskMapPanel
+          currentFilters={{
+            activeLocationSet: Boolean(parcel),
+            codYear: selectedYear === "all" ? null : selectedYear,
+            status: selectedStatus,
+          }}
+          datasetName="MISO generation interconnection queue"
+          onApply={applyMapQuestion}
+          projects={mappedProjects.map((project) => ({
+            codDate: project.targetCod,
+            codYear: project.codYear,
+            county: project.county,
+            distanceMi: parcel ? project.distanceMi : null,
+            fuelType: project.fuelType,
+            id: project.id,
+            label: project.projectNumber,
+            mw: project.mw,
+            owner: project.transmissionOwner || "Not listed",
+            poi: project.poiName || "Not listed",
+            queueStage: [project.studyCycle, project.studyGroup, project.studyPhase]
+              .filter(Boolean)
+              .join(" / "),
+            state: project.state,
+            status: project.status,
+          }))}
+          sourceNotes={`${source.positionNote} Distances are only available after a load location is set.`}
+          theme="light"
+          totalProjectCount={stats.totalQueueProjects}
+        />
 
-        <section className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-[#e5ded2] p-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-                COD Year
+              <h2 className="text-lg font-semibold">Queue Map</h2>
+              <p className="text-xs text-[#66727a]">
+                Satellite imagery with user-set load geometry and queue projects.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 md:items-end">
+              <div className="inline-flex flex-wrap rounded-md border border-[#cfc5b6] bg-[#f7f2e9] p-1">
+                {STATUS_OPTIONS.map((status) => (
+                  <button
+                    className={`rounded px-3 py-1.5 text-xs font-semibold ${selectedStatus === status ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
+                    key={status}
+                    onClick={() => setSelectedStatus(status)}
+                    type="button"
+                  >
+                    {status === "Active" ? "Active MISO Queue" : status}
+                  </button>
+                ))}
               </div>
-              <div className="mt-2 flex max-w-full gap-2 overflow-x-auto pb-1">
+              <div className="flex max-w-full flex-wrap items-center justify-end gap-1 rounded-md border border-[#cfc5b6] bg-[#f7f2e9] p-1">
+                <span className="px-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b5d2a]">COD Year</span>
                 <button
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    selectedYear === "all"
-                      ? "border-[#2f4858] bg-[#2f4858] text-white"
-                      : "border-[#cfc5b6] text-[#66727a] hover:bg-[#f7f2e9]"
-                  }`}
+                  className={`rounded px-2.5 py-1.5 text-xs font-semibold ${selectedYear === "all" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
                   onClick={() => setSelectedYear("all")}
                   type="button"
                 >
@@ -1145,12 +1154,8 @@ export default function MisoInterconnectionPage() {
                 </button>
                 {stats.codYears.map((year) => (
                   <button
+                    className={`rounded px-2.5 py-1.5 text-xs font-semibold ${selectedYear === year ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
                     key={year}
-                    className={`rounded-md border px-3 py-2 text-sm ${
-                      selectedYear === year
-                        ? "border-[#2f4858] bg-[#2f4858] text-white"
-                        : "border-[#cfc5b6] text-[#66727a] hover:bg-[#f7f2e9]"
-                    }`}
                     onClick={() => setSelectedYear(year)}
                     type="button"
                   >
@@ -1159,63 +1164,52 @@ export default function MisoInterconnectionPage() {
                 ))}
               </div>
             </div>
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-                Queue status
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {STATUS_OPTIONS.map((status) => (
-                  <button
-                    key={status}
-                    className={`rounded-md border px-3 py-2 text-sm ${
-                      selectedStatus === status
-                        ? "border-[#2f4858] bg-[#2f4858] text-white"
-                        : "border-[#cfc5b6] text-[#66727a] hover:bg-[#f7f2e9]"
-                    }`}
-                    onClick={() => setSelectedStatus(status)}
-                    type="button"
-                  >
-                    {status}
-                  </button>
-                ))}
-              </div>
+          </div>
+
+          <div className="grid gap-3 border-b border-[#e5ded2] bg-[#fbf8f1] p-4 lg:grid-cols-[1fr_auto_1fr] lg:items-end">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
+                Coordinates
+              </span>
+              <input
+                className="mt-2 w-full rounded-md border border-[#cfc5b6] bg-white px-3 py-2 text-sm text-[#172026] outline-none transition focus:border-[#7b5d2a]"
+                onChange={(event) => setCoordinateInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") applyCoordinateInput();
+                }}
+                placeholder="29.9267, -97.7486"
+                type="text"
+                value={coordinateInput}
+              />
+            </label>
+            <button
+              className="rounded-md border border-[#b9aa90] bg-white px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
+              onClick={applyCoordinateInput}
+              type="button"
+            >
+              Set Load
+            </button>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">
+                KML / KMZ load area
+              </span>
+              <input
+                accept=".kml,.kmz"
+                className="mt-2 w-full rounded-md border border-[#cfc5b6] bg-white px-3 py-2 text-sm text-[#172026] file:mr-3 file:rounded file:border-0 file:bg-[#2f4858] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
+                onChange={(event) => handleFileUpload(event.target.files?.[0] || null)}
+                type="file"
+              />
+            </label>
+            <div className="space-y-1 text-xs leading-5 text-[#66727a] lg:col-span-3">
+              <p>{uploadMessage || "No load location set."}</p>
+              <p>
+                {parcel
+                  ? `Active load location: ${parcel.name} (${parcel.center.lat.toFixed(6)}, ${parcel.center.lon.toFixed(6)})`
+                  : "Enter coordinates or upload KML/KMZ to set the active load location."}
+              </p>
             </div>
           </div>
-        </section>
 
-        <section>
-          <AskMapPanel
-            currentFilters={{
-              activeLocationSet: Boolean(parcel),
-              codYear: selectedYear === "all" ? null : selectedYear,
-              status: selectedStatus,
-            }}
-            datasetName="MISO generation interconnection queue"
-            onApply={applyMapQuestion}
-            projects={mappedProjects.map((project) => ({
-              codDate: project.targetCod,
-              codYear: project.codYear,
-              county: project.county,
-              distanceMi: parcel ? project.distanceMi : null,
-              fuelType: project.fuelType,
-              id: project.id,
-              label: project.projectNumber,
-              mw: project.mw,
-              owner: project.transmissionOwner || "Not listed",
-              poi: project.poiName || "Not listed",
-              queueStage: [project.studyCycle, project.studyGroup, project.studyPhase]
-                .filter(Boolean)
-                .join(" / "),
-              state: project.state,
-              status: project.status,
-            }))}
-            sourceNotes={`${source.positionNote} Distances are only available after a load location is set.`}
-            theme="light"
-            totalProjectCount={stats.totalQueueProjects}
-          />
-        </section>
-
-        <section>
           <MisoMap
             highlightProjectIds={askHighlightIds}
             legendItems={legendItems}
@@ -1224,97 +1218,72 @@ export default function MisoInterconnectionPage() {
             selectedProject={hoveredProject}
             onHoverProject={setHoveredProject}
           />
-          <div className="mt-3 rounded-lg border border-[#d7d1c5] bg-white p-4 text-sm leading-6 text-[#66727a] shadow-sm">
-            <div className="font-semibold text-[#172026]">Selected project explanation</div>
-            <p className="mt-1">
-              Hover a generation project to see MW capacity, status, queue date, withdrawn date
-              when applicable, COD target, study cycle, POI, transmission owner, and distance from
-              the active load location. Distances on this MISO page are straight-line distances because
-              public MISO queue rows do not include a line-following network path.
-            </p>
-            <p className="mt-2 text-xs text-[#66727a]">{source.positionNote}</p>
-          </div>
-        </section>
+        </div>
 
-        <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-          <div className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
-            <div className="text-sm font-semibold text-[#172026]">Project density by county</div>
-            <div className="mt-3 max-h-[300px] overflow-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 bg-[#fbf8f1] text-[#66727a]">
-                  <tr>
-                    <th className="px-2 py-2">County</th>
-                    <th className="px-2 py-2">Active projects</th>
-                    <th className="px-2 py-2">Active MW</th>
-                    <th className="px-2 py-2">Types</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {countySummaries.slice(0, 30).map((summary) => (
-                    <tr key={`${summary.state}-${summary.county}`} className="border-t border-[#e5ded2]">
-                      <td className="px-2 py-2 font-semibold text-[#172026]">
-                        {summary.county}, {summary.state}
-                      </td>
-                      <td className="px-2 py-2">{summary.activeProjects}</td>
-                      <td className="px-2 py-2">{formatNumber(summary.activeMw, 1)}</td>
-                      <td className="px-2 py-2 text-[#66727a]">{summary.fuelTypes.join(", ")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
-            <div className="text-sm font-semibold text-[#172026]">Source coverage</div>
-            <div className="mt-3 grid gap-3 text-sm text-[#66727a]">
+        <aside className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
+          <h2 className="text-lg font-semibold">Selected Project</h2>
+          {selectedForPanel ? (
+            <div className="mt-4 space-y-4">
               <div>
-                <span className="font-semibold text-[#172026]">{formatNumber(stats.totalQueueProjects)}</span>{" "}
-                total queue rows from MISO, including{" "}
-                <span className="font-semibold text-[#172026]">{formatNumber(stats.activeProjects)}</span>{" "}
-                active rows.
+                <p className="text-2xl font-semibold">{selectedForPanel.projectNumber}</p>
+                <p className="mt-1 text-sm text-[#66727a]">{selectedForPanel.poiName || "POI not listed"}</p>
               </div>
-              <div>
-                The map uses official queue attributes and public Census county centroids where
-                MISO does not expose raw point coordinates through the downloadable queue API.
+              <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4 xl:grid-cols-5">
+                <MisoInfo label="Distance" value={parcel ? `${formatNumber(selectedForPanel.distanceMi, 1)} mi straight-line` : "Set load"} />
+                <MisoInfo label="Capacity" value={formatMw(selectedForPanel.mw)} />
+                <MisoInfo label="Status" value={selectedForPanel.status} />
+                <MisoInfo label="Queue date" value={formatDate(selectedForPanel.queueDate)} />
+                <MisoInfo label="Target COD" value={formatDate(selectedForPanel.targetCod)} />
+                <MisoInfo label="Owner/entity" value={selectedForPanel.transmissionOwner || "Not listed"} />
+                <MisoInfo label="Withdrawn date" value={formatDate(selectedForPanel.withdrawnDate)} />
+                <MisoInfo label="TO" value={selectedForPanel.transmissionOwner || "Not listed"} />
+                <MisoInfo label="Type" value={selectedForPanel.fuelType} />
+                <MisoInfo label="Study" value={[selectedForPanel.studyCycle, selectedForPanel.studyGroup, selectedForPanel.studyPhase].filter(Boolean).join(" / ") || "Not listed"} />
               </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <a className="rounded-md border border-[#b9aa90] px-2 py-1 font-semibold text-[#22313a] hover:bg-[#f0e7d6]" href={source.queueApi} rel="noreferrer" target="_blank">
-                  Queue API
-                </a>
-                <a className="rounded-md border border-[#b9aa90] px-2 py-1 font-semibold text-[#22313a] hover:bg-[#f0e7d6]" href={source.poiAnalysisMap} rel="noreferrer" target="_blank">
-                  POI analysis
-                </a>
-                {source.powerBiReports.map((href, index) => (
-                  <a key={href} className="rounded-md border border-[#b9aa90] px-2 py-1 font-semibold text-[#22313a] hover:bg-[#f0e7d6]" href={href} rel="noreferrer" target="_blank">
-                    PowerBI {index + 1}
-                  </a>
-                ))}
+              <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
+                {source.positionNote}
               </div>
             </div>
-          </div>
-        </section>
+          ) : (
+            <p className="mt-3 text-sm text-[#66727a]">No mapped MISO queue projects are loaded yet.</p>
+          )}
+        </aside>
+      </section>
 
-        <section className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <section className="mx-auto max-w-7xl px-6 pb-6">
+        <MisoClusterNetworkUpgradeCosts summaries={clusterSummaries} />
+      </section>
+
+      <section className="mx-auto grid max-w-7xl gap-5 px-6 pb-6 lg:grid-cols-2">
+        <Breakdown title="Nearby Active by Stage" items={nearbyByStage} />
+        <Breakdown title="Nearby Active MW by Type" items={nearbyByType} suffix=" MW" />
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 pb-10">
+        <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
+          <div className="border-b border-[#e5ded2] p-4">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-                {parcel ? "Nearby queue projects" : "Mapped queue projects"}
-              </div>
-              <h2 className="mt-1 text-xl font-semibold text-[#172026]">
-                {formatNumber(nearbyProjects.length)} mapped projects in current filters
-              </h2>
+              <h2 className="text-lg font-semibold">Nearby Active Queue Projects</h2>
+              <p className="text-xs text-[#66727a]">
+                Sorted by straight-line distance where a load location is set. MISO rows use public queue attributes and mapped public county centroids where project coordinates are not directly exposed.
+              </p>
+              <p className="mt-1 text-xs text-[#66727a]">
+                Showing {formatNumber(nearbyProjects.length)} mapped projects in current filters.
+              </p>
             </div>
+          </div>
+          <div className="border-b border-[#e5ded2] bg-[#fffdf8] p-4">
             <button
-              className="w-fit rounded-md border border-[#b9aa90] px-3 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
+              className="rounded-md border border-[#c8bda9] px-3 py-2 text-xs font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
               onClick={() => setFilters(DEFAULT_FILTERS)}
               type="button"
             >
               Clear filters
             </button>
           </div>
-          <div className="overflow-auto">
-            <table className="min-w-[1180px] w-full text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-[#fbf8f1] text-[#66727a]">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1180px] text-left text-sm">
+              <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
                 <tr>
                   <th className="px-2 py-2">
                     <button className="font-semibold" onClick={() => toggleSort("projectNumber")} type="button">
@@ -1351,27 +1320,27 @@ export default function MisoInterconnectionPage() {
                 </tr>
                 <tr className="border-t border-[#e5ded2]">
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.project} onChange={(event) => updateFilter("project", event.target.value)} placeholder="Filter" />
+                    <input className="w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]" value={filters.project} onChange={(event) => updateFilter("project", event.target.value)} placeholder="Filter" />
                   </th>
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.fuel} onChange={(event) => updateFilter("fuel", event.target.value)} placeholder="Filter" />
-                  </th>
-                  <th />
-                  <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.mw} onChange={(event) => updateFilter("mw", event.target.value)} placeholder=">100" />
-                  </th>
-                  <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.distance} onChange={(event) => updateFilter("distance", event.target.value)} placeholder="<250" />
+                    <input className="w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]" value={filters.fuel} onChange={(event) => updateFilter("fuel", event.target.value)} placeholder="Filter" />
                   </th>
                   <th />
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.cod} onChange={(event) => updateFilter("cod", event.target.value)} placeholder="2028" />
+                    <input className="w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]" value={filters.mw} onChange={(event) => updateFilter("mw", event.target.value)} placeholder=">100" />
                   </th>
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.poi} onChange={(event) => updateFilter("poi", event.target.value)} placeholder="Filter" />
+                    <input className="w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]" value={filters.distance} onChange={(event) => updateFilter("distance", event.target.value)} placeholder="<250" />
+                  </th>
+                  <th />
+                  <th className="px-2 pb-2">
+                    <input className="w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]" value={filters.cod} onChange={(event) => updateFilter("cod", event.target.value)} placeholder="2028" />
                   </th>
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.owner} onChange={(event) => updateFilter("owner", event.target.value)} placeholder="Filter" />
+                    <input className="w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]" value={filters.poi} onChange={(event) => updateFilter("poi", event.target.value)} placeholder="Filter" />
+                  </th>
+                  <th className="px-2 pb-2">
+                    <input className="w-full rounded-md border border-[#cfc5b6] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#172026] outline-none transition focus:border-[#7b5d2a] focus:ring-2 focus:ring-[#eadcc1]" value={filters.owner} onChange={(event) => updateFilter("owner", event.target.value)} placeholder="Filter" />
                   </th>
                   <th />
                   <th />
@@ -1415,8 +1384,153 @@ export default function MisoInterconnectionPage() {
               </tbody>
             </table>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
+  );
+}
+
+function MetricCard({ detail, label, value }: { detail: string; label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-[#172026]">{value}</p>
+      <p className="mt-1 text-xs text-[#66727a]">{detail}</p>
+    </div>
+  );
+}
+
+function MisoClusterNetworkUpgradeCosts({
+  summaries,
+}: {
+  summaries: Array<{ activeMw: number; mappedCount: number; projectCount: number; stage: string }>;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
+      <div className="border-b border-[#e5ded2] p-4">
+        <h2 className="text-lg font-semibold">Estimated Network Upgrade Costs by Queue Cluster</h2>
+        <p className="mt-1 text-xs leading-5 text-[#66727a]">
+          MISO queue clusters are grouped with the same layout as SPP; source-backed upgrade-cost workbooks have not been loaded for these MISO rows yet.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[980px] text-left text-sm">
+          <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
+            <tr>
+              <th className="px-3 py-3">Cluster</th>
+              <th className="px-3 py-3">MISO total NU estimate</th>
+              <th className="px-3 py-3">Cluster MW</th>
+              <th className="px-3 py-3">Median $/kW</th>
+              <th className="px-3 py-3">Nearby assigned NU</th>
+              <th className="px-3 py-3">Coverage</th>
+              <th className="px-3 py-3">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summaries.length > 0 ? (
+              summaries.map((summary) => (
+                <tr className="border-t border-[#eee8de]" key={summary.stage}>
+                  <td className="px-3 py-3 font-semibold text-[#172026]">{summary.stage}</td>
+                  <td className="px-3 py-3">Not loaded</td>
+                  <td className="px-3 py-3">{formatNumber(summary.activeMw, 1)} MW</td>
+                  <td className="px-3 py-3">Not loaded</td>
+                  <td className="px-3 py-3">Not loaded</td>
+                  <td className="px-3 py-3 text-[#4b565e]">
+                    {summary.mappedCount}/{summary.projectCount} mapped
+                  </td>
+                  <td className="max-w-[280px] px-3 py-3 text-[#4b565e]">
+                    <a className="text-[#246b8f] underline-offset-2 hover:underline" href={MISO_SOURCE.generatorInterconnection} rel="noreferrer" target="_blank">
+                      MISO queue data
+                    </a>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr className="border-t border-[#eee8de]">
+                <td className="px-3 py-8 text-center text-sm text-[#66727a]" colSpan={7}>
+                  No MISO queue clusters match the current filters.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function breakdownByMisoStage(projects: readonly ProjectWithDistance[]): BreakdownItem[] {
+  const counts = new Map<string, number>();
+  for (const project of projects) {
+    const stage = [project.studyCycle, project.studyGroup, project.studyPhase].filter(Boolean).join(" / ") || project.status || "Not listed";
+    counts.set(stage, (counts.get(stage) ?? 0) + 1);
+  }
+  return Array.from(counts, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8);
+}
+
+function breakdownMisoMwByType(projects: readonly ProjectWithDistance[]): BreakdownItem[] {
+  const counts = new Map<string, number>();
+  for (const project of projects) {
+    counts.set(project.fuelType, (counts.get(project.fuelType) ?? 0) + (project.mw || 0));
+  }
+  return Array.from(counts, ([name, count]) => ({ name, count: Math.round(count * 10) / 10 })).sort((a, b) => b.count - a.count).slice(0, 8);
+}
+
+function summarizeMisoClusters(projects: readonly ProjectWithDistance[]) {
+  const summaries = new Map<string, { activeMw: number; mappedCount: number; projectCount: number; stage: string }>();
+
+  for (const project of projects) {
+    const stage = project.studyCycle || project.studyGroup || project.studyPhase || "Not listed";
+    const current = summaries.get(stage) ?? {
+      activeMw: 0,
+      mappedCount: 0,
+      projectCount: 0,
+      stage,
+    };
+    current.activeMw += project.mw || 0;
+    current.mappedCount += project.coordinates ? 1 : 0;
+    current.projectCount += 1;
+    summaries.set(stage, current);
+  }
+
+  return Array.from(summaries.values()).sort((a, b) => b.activeMw - a.activeMw).slice(0, 10);
+}
+
+function Breakdown({ items, suffix = "", title }: { items: readonly BreakdownItem[]; suffix?: string; title: string }) {
+  const max = Math.max(...items.map((item) => item.count), 1);
+
+  return (
+    <div className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="mt-4 space-y-3">
+        {items.length > 0 ? (
+          items.map((item) => (
+            <div key={item.name}>
+              <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium">{item.name}</span>
+                <span className="text-[#66727a]">
+                  {formatNumber(item.count, item.count % 1 === 0 ? 0 : 1)}
+                  {suffix}
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-[#ece5da]">
+                <div className="h-full rounded-full bg-[#2f4858]" style={{ width: `${Math.max(5, (item.count / max) * 100)}%` }} />
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-[#66727a]">No projects match the current filters.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MisoInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[#e5ded2] bg-[#fbf8f1] p-3">
+      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[#7b5d2a]">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#172026]">{value}</p>
+    </div>
   );
 }
