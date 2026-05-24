@@ -4,7 +4,7 @@ import JSZip from "jszip";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AskMapPanel, type MapQuestionResult } from "@/app/_components/AskMapPanel";
-import { MarketToggle } from "@/app/_components/MarketToggle";
+import { interconnectionData } from "@/data/interconnection-data";
 
 type MisoPoint = {
   lat: number;
@@ -936,6 +936,8 @@ export default function MisoInterconnectionPage() {
   const activeTopTwentyTwoMw = allMappedActive
     .slice(0, 22)
     .reduce((sum, project) => sum + (project.mw || 0), 0);
+  const combinedActiveQueueCount = interconnectionData.stats.activeQueueCount + stats.activeProjects;
+  const combinedActiveQueueMw = interconnectionData.stats.activeQueueMw + stats.activeMw;
   const nearbyByStage = useMemo(() => breakdownByMisoStage(nearbyProjects), [nearbyProjects]);
   const nearbyByType = useMemo(() => breakdownMisoMwByType(nearbyProjects), [nearbyProjects]);
   const clusterSummaries = useMemo(() => summarizeMisoClusters(nearbyProjects), [nearbyProjects]);
@@ -1022,9 +1024,9 @@ export default function MisoInterconnectionPage() {
 
   const metricCards = [
     {
-      label: "Active MISO Queue",
-      value: loadError ? "Error" : data ? formatNumber(stats.activeProjects) : "Loading",
-      detail: loadError || (data ? `${formatNumber(stats.activeMw, 1)} MW` : "Fetching public queue data"),
+      label: "Active MISO and SPP Queue",
+      value: loadError ? "Error" : data ? formatNumber(combinedActiveQueueCount) : "Loading",
+      detail: loadError || (data ? `${formatNumber(combinedActiveQueueMw, 1)} MW` : "Fetching public queue data"),
     },
     {
       label: "Mapped Active",
@@ -1059,9 +1061,12 @@ export default function MisoInterconnectionPage() {
           <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-                Market
+                Market Coverage
               </p>
-              <MarketToggle active="miso" />
+              <h1 className="text-2xl font-semibold text-[#172026]">MISO + SPP</h1>
+              <p className="mt-1 text-sm text-[#66727a]">
+                Generation queue proximity and load matching across both markets.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs lg:justify-end">
               <a
@@ -1139,7 +1144,7 @@ export default function MisoInterconnectionPage() {
                     onClick={() => setSelectedStatus(status)}
                     type="button"
                   >
-                    {status === "Active" ? "Active MISO Queue" : status}
+                    {status === "Active" ? "Active MISO and SPP Queue" : status}
                   </button>
                 ))}
               </div>

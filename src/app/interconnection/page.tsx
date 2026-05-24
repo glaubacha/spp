@@ -3,7 +3,6 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { AskMapPanel, type MapQuestionResult } from "@/app/_components/AskMapPanel";
-import { MarketToggle } from "@/app/_components/MarketToggle";
 import { interconnectionData } from "@/data/interconnection-data";
 import {
   interconnectionFyiProjects,
@@ -27,6 +26,10 @@ type NearbyProjectFilters = {
   electricalMin: string;
   straightMax: string;
   straightMin: string;
+};
+type MisoQueueStats = {
+  activeMw: number;
+  activeProjects: number;
 };
 type ElectricalDistanceEstimate = {
   electricalMiles?: number;
@@ -1690,6 +1693,7 @@ export default function InterconnectionPage() {
   const [electricalDistances, setElectricalDistances] = useState<ElectricalDistanceLookup>({});
   const [electricalDistanceSummary, setElectricalDistanceSummary] = useState<ElectricalDistanceSummary>(electricalFallbackSummary);
   const [nearbyProjectFilters, setNearbyProjectFilters] = useState<NearbyProjectFilters>(emptyNearbyProjectFilters);
+  const [misoQueueStats, setMisoQueueStats] = useState<MisoQueueStats | null>(null);
   const yearOptions = useMemo(
     () => (hasActiveParcel ? yearsFor(mode, activeParcelCenter, electricalDistances) : yearsFor("active", activeParcelCenter, {})),
     [activeParcelCenter, electricalDistances, hasActiveParcel, mode],
@@ -1797,6 +1801,33 @@ export default function InterconnectionPage() {
     }
   }, [selectedId, visibleProjects]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/data/miso-interconnection-data.json")
+      .then((response) => {
+        if (!response.ok) throw new Error("MISO queue stats unavailable");
+        return response.json() as Promise<{ stats?: { activeMw?: number; activeProjects?: number } }>;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setMisoQueueStats({
+          activeMw: payload.stats?.activeMw ?? 0,
+          activeProjects: payload.stats?.activeProjects ?? 0,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setMisoQueueStats(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const combinedActiveQueueCount =
+    interconnectionData.stats.activeQueueCount + (misoQueueStats?.activeProjects ?? 0);
+  const combinedActiveQueueMw =
+    interconnectionData.stats.activeQueueMw + (misoQueueStats?.activeMw ?? 0);
+
   return (
     <main className="min-h-screen bg-[#f7f5ef] text-[#172026]">
       <section className="border-b border-[#d7d1c5] bg-[#fffaf0] px-6 py-6">
@@ -1804,9 +1835,12 @@ export default function InterconnectionPage() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-                Market
+                Market Coverage
               </p>
-              <MarketToggle active="spp" />
+              <h1 className="text-2xl font-semibold text-[#172026]">MISO + SPP</h1>
+              <p className="mt-1 text-sm text-[#66727a]">
+                Generation queue proximity and load matching across both markets.
+              </p>
             </div>
             <a
               className="inline-flex items-center justify-center rounded-md border border-[#b9aa90] px-4 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
@@ -1821,7 +1855,11 @@ export default function InterconnectionPage() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-4 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
-        <Metric label="Active SPP Queue" value={interconnectionData.stats.activeQueueCount.toString()} detail={`${formatMw(interconnectionData.stats.activeQueueMw)} MW`} />
+        <Metric
+          label="Active MISO and SPP Queue"
+          value={misoQueueStats ? combinedActiveQueueCount.toString() : `${interconnectionData.stats.activeQueueCount} + MISO`}
+          detail={misoQueueStats ? `${formatMw(combinedActiveQueueMw)} MW` : `${formatMw(interconnectionData.stats.activeQueueMw)} MW SPP; loading MISO`}
+        />
         <Metric
           label="Nearby active"
           value={hasActiveParcel ? `${visibleNearbyProjects.length} (${formatMw(nearbyActiveMw)} MW)` : "Set load"}
@@ -1869,7 +1907,7 @@ export default function InterconnectionPage() {
                   onClick={() => setMode("active")}
                   type="button"
                 >
-                  Active SPP Queue
+                  Active MISO and SPP Queue
                 </button>
                 <button
                   className={`rounded px-3 py-1.5 text-xs font-semibold ${mode === "nearby" ? "bg-white text-[#172026] shadow-sm" : "text-[#66727a]"}`}
