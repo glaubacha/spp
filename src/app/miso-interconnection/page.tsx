@@ -1038,74 +1038,63 @@ export default function MisoInterconnectionPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#071317] px-4 py-5 text-slate-100 md:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1800px]">
-        <header className="mb-5 flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">
-              MISO generation interconnection
-            </div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-white md:text-4xl">
-              MISO generation + load matching
-            </h1>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">
-              Active and historical MISO generator interconnection projects from the public
-              queue, ready to match against user-entered load coordinates or KML/KMZ geometry with COD year filters, status filters,
-              project hover details, and sortable nearby queue positions.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 lg:items-end">
+    <main className="min-h-screen bg-[#f7f5ef] text-[#172026]">
+      <section className="border-b border-[#d7d1c5] bg-[#fffaf0] px-6 py-6">
+        <div className="mx-auto max-w-7xl">
+          <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-200">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
                 Market
               </p>
-              <MarketToggle active="miso" theme="dark" />
+              <MarketToggle active="miso" />
             </div>
             <div className="flex flex-wrap gap-2 text-xs lg:justify-end">
-            <a
-              className="rounded-md border border-white/15 px-3 py-2 text-slate-200 hover:bg-white/10"
-              href={source.generatorInterconnection}
-              rel="noreferrer"
-              target="_blank"
-            >
-              MISO source
-            </a>
-            <a
-              className="rounded-md border border-white/15 px-3 py-2 text-slate-200 hover:bg-white/10"
-              href={source.currentQueueMap}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Current queue map
-            </a>
+              <a
+                className="rounded-md border border-[#b9aa90] px-3 py-2 font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
+                href={source.generatorInterconnection}
+                rel="noreferrer"
+                target="_blank"
+              >
+                MISO source
+              </a>
+              <a
+                className="rounded-md border border-[#b9aa90] px-3 py-2 font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
+                href={source.currentQueueMap}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Current queue map
+              </a>
             </div>
-          </div>
-        </header>
+          </header>
+        </div>
+      </section>
 
-        <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mx-auto max-w-7xl space-y-5 px-6 py-5">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {metricCards.map((card) => (
-            <div key={card.label} className="rounded-lg border border-white/10 bg-white/[0.055] p-4">
-              <div className="text-xs uppercase tracking-[0.14em] text-slate-400">{card.label}</div>
-              <div className="mt-2 text-2xl font-semibold text-white">{card.value}</div>
-              <div className="mt-1 text-sm text-slate-300">{card.detail}</div>
+            <div key={card.label} className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">{card.label}</div>
+              <div className="mt-2 text-2xl font-semibold text-[#172026]">{card.value}</div>
+              <div className="mt-1 text-sm text-[#66727a]">{card.detail}</div>
             </div>
           ))}
         </section>
 
-        <section className="mb-5 grid gap-4 rounded-lg border border-white/10 bg-slate-900/70 p-4 xl:grid-cols-[1.4fr_1fr_1fr]">
+        <section className="grid gap-4 rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm xl:grid-cols-[1.4fr_1fr_1fr]">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
               Input coordinates
             </label>
             <div className="mt-2 flex gap-2">
               <input
-                className="min-w-0 flex-1 rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none ring-cyan-300/40 placeholder:text-slate-500 focus:ring-2"
+                className="min-w-0 flex-1 rounded-md border border-[#cfc5b6] bg-white px-3 py-2 text-sm text-[#172026] outline-none transition placeholder:text-[#8a8175] focus:border-[#7b5d2a]"
                 placeholder="36.517955, -101.326008"
                 value={coordinateInput}
                 onChange={(event) => setCoordinateInput(event.target.value)}
               />
               <button
-                className="rounded-md bg-cyan-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-200"
+                className="rounded-md border border-[#b9aa90] bg-white px-3 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
                 onClick={applyCoordinateInput}
                 type="button"
               >
@@ -1114,40 +1103,40 @@ export default function MisoInterconnectionPage() {
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
               KML / KMZ load area
             </label>
             <input
               accept=".kml,.kmz"
-              className="mt-2 block w-full text-sm text-slate-200 file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-sm file:text-white hover:file:bg-white/15"
+              className="mt-2 block w-full rounded-md border border-[#cfc5b6] bg-white px-3 py-2 text-sm text-[#172026] file:mr-3 file:rounded file:border-0 file:bg-[#2f4858] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
               type="file"
               onChange={(event) => handleFileUpload(event.target.files?.[0] || null)}
             />
           </div>
-          <div className="text-sm text-slate-300">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+          <div className="text-sm text-[#66727a]">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
               Active load location
             </div>
-            <div className="mt-2 font-semibold text-white">{parcel?.name ?? "No load location set"}</div>
+            <div className="mt-2 font-semibold text-[#172026]">{parcel?.name ?? "No load location set"}</div>
             <div>
               {parcel ? `${parcel.center.lat.toFixed(6)}, ${parcel.center.lon.toFixed(6)}` : "Enter coordinates or upload KML/KMZ"}
             </div>
-            <div className="mt-1 text-xs text-cyan-100">{uploadMessage || "No load location set."}</div>
+            <div className="mt-1 text-xs text-[#7b5d2a]">{uploadMessage || "No load location set."}</div>
           </div>
         </section>
 
-        <section className="mb-5 rounded-lg border border-white/10 bg-slate-900/70 p-4">
+        <section className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
                 COD Year
               </div>
               <div className="mt-2 flex max-w-full gap-2 overflow-x-auto pb-1">
                 <button
                   className={`rounded-md border px-3 py-2 text-sm ${
                     selectedYear === "all"
-                      ? "border-cyan-300 bg-cyan-300 text-slate-950"
-                      : "border-white/15 text-slate-200 hover:bg-white/10"
+                      ? "border-[#2f4858] bg-[#2f4858] text-white"
+                      : "border-[#cfc5b6] text-[#66727a] hover:bg-[#f7f2e9]"
                   }`}
                   onClick={() => setSelectedYear("all")}
                   type="button"
@@ -1159,8 +1148,8 @@ export default function MisoInterconnectionPage() {
                     key={year}
                     className={`rounded-md border px-3 py-2 text-sm ${
                       selectedYear === year
-                        ? "border-cyan-300 bg-cyan-300 text-slate-950"
-                        : "border-white/15 text-slate-200 hover:bg-white/10"
+                        ? "border-[#2f4858] bg-[#2f4858] text-white"
+                        : "border-[#cfc5b6] text-[#66727a] hover:bg-[#f7f2e9]"
                     }`}
                     onClick={() => setSelectedYear(year)}
                     type="button"
@@ -1171,7 +1160,7 @@ export default function MisoInterconnectionPage() {
               </div>
             </div>
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
                 Queue status
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -1180,8 +1169,8 @@ export default function MisoInterconnectionPage() {
                     key={status}
                     className={`rounded-md border px-3 py-2 text-sm ${
                       selectedStatus === status
-                        ? "border-cyan-300 bg-cyan-300 text-slate-950"
-                        : "border-white/15 text-slate-200 hover:bg-white/10"
+                        ? "border-[#2f4858] bg-[#2f4858] text-white"
+                        : "border-[#cfc5b6] text-[#66727a] hover:bg-[#f7f2e9]"
                     }`}
                     onClick={() => setSelectedStatus(status)}
                     type="button"
@@ -1194,7 +1183,7 @@ export default function MisoInterconnectionPage() {
           </div>
         </section>
 
-        <section className="mb-5">
+        <section>
           <AskMapPanel
             currentFilters={{
               activeLocationSet: Boolean(parcel),
@@ -1221,12 +1210,12 @@ export default function MisoInterconnectionPage() {
               status: project.status,
             }))}
             sourceNotes={`${source.positionNote} Distances are only available after a load location is set.`}
-            theme="dark"
+            theme="light"
             totalProjectCount={stats.totalQueueProjects}
           />
         </section>
 
-        <section className="mb-5">
+        <section>
           <MisoMap
             highlightProjectIds={askHighlightIds}
             legendItems={legendItems}
@@ -1235,24 +1224,24 @@ export default function MisoInterconnectionPage() {
             selectedProject={hoveredProject}
             onHoverProject={setHoveredProject}
           />
-          <div className="mt-3 rounded-lg border border-white/10 bg-slate-900/70 p-4 text-sm leading-6 text-slate-300">
-            <div className="font-semibold text-white">Selected project explanation</div>
+          <div className="mt-3 rounded-lg border border-[#d7d1c5] bg-white p-4 text-sm leading-6 text-[#66727a] shadow-sm">
+            <div className="font-semibold text-[#172026]">Selected project explanation</div>
             <p className="mt-1">
               Hover a generation project to see MW capacity, status, queue date, withdrawn date
               when applicable, COD target, study cycle, POI, transmission owner, and distance from
               the active load location. Distances on this MISO page are straight-line distances because
               public MISO queue rows do not include a line-following network path.
             </p>
-            <p className="mt-2 text-xs text-slate-400">{source.positionNote}</p>
+            <p className="mt-2 text-xs text-[#66727a]">{source.positionNote}</p>
           </div>
         </section>
 
-        <section className="mb-5 grid gap-4 xl:grid-cols-[1fr_1fr]">
-          <div className="rounded-lg border border-white/10 bg-white/[0.045] p-4">
-            <div className="text-sm font-semibold text-white">Project density by county</div>
+        <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
+            <div className="text-sm font-semibold text-[#172026]">Project density by county</div>
             <div className="mt-3 max-h-[300px] overflow-auto">
               <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 bg-slate-950 text-slate-400">
+                <thead className="sticky top-0 bg-[#fbf8f1] text-[#66727a]">
                   <tr>
                     <th className="px-2 py-2">County</th>
                     <th className="px-2 py-2">Active projects</th>
@@ -1262,26 +1251,26 @@ export default function MisoInterconnectionPage() {
                 </thead>
                 <tbody>
                   {countySummaries.slice(0, 30).map((summary) => (
-                    <tr key={`${summary.state}-${summary.county}`} className="border-t border-white/10">
-                      <td className="px-2 py-2 text-white">
+                    <tr key={`${summary.state}-${summary.county}`} className="border-t border-[#e5ded2]">
+                      <td className="px-2 py-2 font-semibold text-[#172026]">
                         {summary.county}, {summary.state}
                       </td>
                       <td className="px-2 py-2">{summary.activeProjects}</td>
                       <td className="px-2 py-2">{formatNumber(summary.activeMw, 1)}</td>
-                      <td className="px-2 py-2 text-slate-300">{summary.fuelTypes.join(", ")}</td>
+                      <td className="px-2 py-2 text-[#66727a]">{summary.fuelTypes.join(", ")}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-          <div className="rounded-lg border border-white/10 bg-white/[0.045] p-4">
-            <div className="text-sm font-semibold text-white">Source coverage</div>
-            <div className="mt-3 grid gap-3 text-sm text-slate-300">
+          <div className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
+            <div className="text-sm font-semibold text-[#172026]">Source coverage</div>
+            <div className="mt-3 grid gap-3 text-sm text-[#66727a]">
               <div>
-                <span className="text-white">{formatNumber(stats.totalQueueProjects)}</span>{" "}
+                <span className="font-semibold text-[#172026]">{formatNumber(stats.totalQueueProjects)}</span>{" "}
                 total queue rows from MISO, including{" "}
-                <span className="text-white">{formatNumber(stats.activeProjects)}</span>{" "}
+                <span className="font-semibold text-[#172026]">{formatNumber(stats.activeProjects)}</span>{" "}
                 active rows.
               </div>
               <div>
@@ -1289,14 +1278,14 @@ export default function MisoInterconnectionPage() {
                 MISO does not expose raw point coordinates through the downloadable queue API.
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
-                <a className="rounded-md border border-white/15 px-2 py-1 hover:bg-white/10" href={source.queueApi} rel="noreferrer" target="_blank">
+                <a className="rounded-md border border-[#b9aa90] px-2 py-1 font-semibold text-[#22313a] hover:bg-[#f0e7d6]" href={source.queueApi} rel="noreferrer" target="_blank">
                   Queue API
                 </a>
-                <a className="rounded-md border border-white/15 px-2 py-1 hover:bg-white/10" href={source.poiAnalysisMap} rel="noreferrer" target="_blank">
+                <a className="rounded-md border border-[#b9aa90] px-2 py-1 font-semibold text-[#22313a] hover:bg-[#f0e7d6]" href={source.poiAnalysisMap} rel="noreferrer" target="_blank">
                   POI analysis
                 </a>
                 {source.powerBiReports.map((href, index) => (
-                  <a key={href} className="rounded-md border border-white/15 px-2 py-1 hover:bg-white/10" href={href} rel="noreferrer" target="_blank">
+                  <a key={href} className="rounded-md border border-[#b9aa90] px-2 py-1 font-semibold text-[#22313a] hover:bg-[#f0e7d6]" href={href} rel="noreferrer" target="_blank">
                     PowerBI {index + 1}
                   </a>
                 ))}
@@ -1305,18 +1294,18 @@ export default function MisoInterconnectionPage() {
           </div>
         </section>
 
-        <section className="rounded-lg border border-white/10 bg-slate-900/70 p-4">
+        <section className="rounded-lg border border-[#d7d1c5] bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
                 {parcel ? "Nearby queue projects" : "Mapped queue projects"}
               </div>
-              <h2 className="mt-1 text-xl font-semibold text-white">
+              <h2 className="mt-1 text-xl font-semibold text-[#172026]">
                 {formatNumber(nearbyProjects.length)} mapped projects in current filters
               </h2>
             </div>
             <button
-              className="w-fit rounded-md border border-white/15 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
+              className="w-fit rounded-md border border-[#b9aa90] px-3 py-2 text-sm font-semibold text-[#22313a] transition hover:bg-[#f0e7d6]"
               onClick={() => setFilters(DEFAULT_FILTERS)}
               type="button"
             >
@@ -1325,7 +1314,7 @@ export default function MisoInterconnectionPage() {
           </div>
           <div className="overflow-auto">
             <table className="min-w-[1180px] w-full text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-slate-950 text-slate-300">
+              <thead className="sticky top-0 z-10 bg-[#fbf8f1] text-[#66727a]">
                 <tr>
                   <th className="px-2 py-2">
                     <button className="font-semibold" onClick={() => toggleSort("projectNumber")} type="button">
@@ -1360,29 +1349,29 @@ export default function MisoInterconnectionPage() {
                   <th className="px-2 py-2">Queue date</th>
                   <th className="px-2 py-2">Withdrawn</th>
                 </tr>
-                <tr className="border-t border-white/10">
+                <tr className="border-t border-[#e5ded2]">
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-white/10 bg-slate-900 px-2 py-1" value={filters.project} onChange={(event) => updateFilter("project", event.target.value)} placeholder="Filter" />
+                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.project} onChange={(event) => updateFilter("project", event.target.value)} placeholder="Filter" />
                   </th>
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-white/10 bg-slate-900 px-2 py-1" value={filters.fuel} onChange={(event) => updateFilter("fuel", event.target.value)} placeholder="Filter" />
-                  </th>
-                  <th />
-                  <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-white/10 bg-slate-900 px-2 py-1" value={filters.mw} onChange={(event) => updateFilter("mw", event.target.value)} placeholder=">100" />
-                  </th>
-                  <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-white/10 bg-slate-900 px-2 py-1" value={filters.distance} onChange={(event) => updateFilter("distance", event.target.value)} placeholder="<250" />
+                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.fuel} onChange={(event) => updateFilter("fuel", event.target.value)} placeholder="Filter" />
                   </th>
                   <th />
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-white/10 bg-slate-900 px-2 py-1" value={filters.cod} onChange={(event) => updateFilter("cod", event.target.value)} placeholder="2028" />
+                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.mw} onChange={(event) => updateFilter("mw", event.target.value)} placeholder=">100" />
                   </th>
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-white/10 bg-slate-900 px-2 py-1" value={filters.poi} onChange={(event) => updateFilter("poi", event.target.value)} placeholder="Filter" />
+                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.distance} onChange={(event) => updateFilter("distance", event.target.value)} placeholder="<250" />
+                  </th>
+                  <th />
+                  <th className="px-2 pb-2">
+                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.cod} onChange={(event) => updateFilter("cod", event.target.value)} placeholder="2028" />
                   </th>
                   <th className="px-2 pb-2">
-                    <input className="w-full rounded border border-white/10 bg-slate-900 px-2 py-1" value={filters.owner} onChange={(event) => updateFilter("owner", event.target.value)} placeholder="Filter" />
+                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.poi} onChange={(event) => updateFilter("poi", event.target.value)} placeholder="Filter" />
+                  </th>
+                  <th className="px-2 pb-2">
+                    <input className="w-full rounded border border-[#cfc5b6] bg-white px-2 py-1" value={filters.owner} onChange={(event) => updateFilter("owner", event.target.value)} placeholder="Filter" />
                   </th>
                   <th />
                   <th />
@@ -1393,15 +1382,15 @@ export default function MisoInterconnectionPage() {
                 {nearbyProjects.slice(0, 250).map((project) => (
                   <tr
                     key={project.id}
-                    className="border-t border-white/10 text-slate-300 hover:bg-white/[0.06]"
+                    className="border-t border-[#e5ded2] text-[#48525a] hover:bg-[#fbf8f1]"
                     onMouseEnter={() => setHoveredProject(project)}
                     onMouseLeave={() => setHoveredProject(null)}
                   >
-                    <td className="px-2 py-2 font-semibold text-white">{project.projectNumber}</td>
+                    <td className="px-2 py-2 font-semibold text-[#172026]">{project.projectNumber}</td>
                     <td className="px-2 py-2">
                       <span className="inline-flex items-center gap-1.5">
                         <span
-                          className="h-2.5 w-2.5 rounded-full border border-white/60"
+                          className="h-2.5 w-2.5 rounded-full border border-[#111827]/30"
                           style={{ backgroundColor: FUEL_COLORS[project.fuelType] || FUEL_COLORS["Not listed"] }}
                         />
                         {project.fuelType}
