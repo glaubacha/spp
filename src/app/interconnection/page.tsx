@@ -3413,6 +3413,20 @@ function SatelliteInfrastructureMap({
       <div className="relative bg-[#111827] p-3">
         <div className="h-[34rem] w-full overflow-hidden rounded-md" ref={containerRef} />
         <div className="absolute right-5 top-16 z-10 space-y-2 rounded-md border border-white/25 bg-black/70 px-3 py-2 text-xs text-white shadow-lg">
+          <label
+            className={`flex items-center gap-2 rounded border px-2 py-1.5 transition ${
+              isPlacingPin ? "border-[#8fd3ff] bg-[#2f4858]" : "border-white/10 bg-white/5"
+            }`}
+          >
+            <input
+              checked={isPlacingPin}
+              className="h-4 w-4 accent-[#8fd3ff]"
+              onChange={(event) => setIsPlacingPin(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="font-semibold">Place Pin</span>
+            <span className="text-white/70">{isPlacingPin ? "Click map" : "Off"}</span>
+          </label>
           <label className="flex items-center gap-2">
             <input
               checked={showExistingPlants}
