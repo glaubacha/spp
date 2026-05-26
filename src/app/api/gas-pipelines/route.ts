@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type LonLat = { lat: number; lon: number };
 type ArcGisFeature = {
   attributes?: Record<string, string | number | null>;
@@ -186,7 +189,7 @@ async function fetchPipelineSource(source: PipelineSource, center: LonLat, radiu
       units: "esriSRUnit_Meter",
       where: "1=1",
     });
-    const response = await fetch(`${source.endpoint}?${params.toString()}`, { next: { revalidate: 3600 } });
+    const response = await fetch(`${source.endpoint}?${params.toString()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`Could not load ${source.sourceName}`);
     const data = (await response.json()) as { exceededTransferLimit?: boolean; features?: ArcGisFeature[] };
     const arcgisFeatures = data.features ?? [];
@@ -271,22 +274,29 @@ export async function GET(request: Request) {
   );
   const features = allFeatures.slice(0, maxReturnedFeatures);
 
-  return NextResponse.json({
-    type: "FeatureCollection",
-    features,
-    properties: {
-      displayedFeatures: features.length,
-      highLevelScreen: "Use NPMS Public Viewer first for gas transmission and hazardous-liquid pipeline screening.",
-      radiusMiles,
-      sourceStatus: sourceResults.map((result) => ({
-        error: result.ok ? null : result.error,
-        features: result.features.length,
-        ok: result.ok,
-        sourceName: result.sourceName,
-      })),
-      totalMatchedFeatures: allFeatures.length,
-      warning:
-        "Pipeline layers are for high-level screening only and must not be used to identify exact pipeline locations or as a substitute for One Call or operator coordination.",
+  return NextResponse.json(
+    {
+      type: "FeatureCollection",
+      features,
+      properties: {
+        displayedFeatures: features.length,
+        highLevelScreen: "Use NPMS Public Viewer first for gas transmission and hazardous-liquid pipeline screening.",
+        radiusMiles,
+        sourceStatus: sourceResults.map((result) => ({
+          error: result.ok ? null : result.error,
+          features: result.features.length,
+          ok: result.ok,
+          sourceName: result.sourceName,
+        })),
+        totalMatchedFeatures: allFeatures.length,
+        warning:
+          "Pipeline layers are for high-level screening only and must not be used to identify exact pipeline locations or as a substitute for One Call or operator coordination.",
+      },
     },
-  });
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    },
+  );
 }

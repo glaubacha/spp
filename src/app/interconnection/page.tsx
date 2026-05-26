@@ -1046,14 +1046,15 @@ function gasPipelinePopupHtml(properties: Record<string, string | number | boole
 
 async function fetchGasPipelineFeatureCollection(center: LonLat): Promise<LineFeatureCollection> {
   const params = new URLSearchParams({
+    _: String(Date.now()),
     lat: String(center.lat),
     lon: String(center.lon),
     radiusMiles: String(gasPipelines.dataRadiusMiles),
   });
-  const response = await fetch(`${gasPipelines.endpoint}?${params.toString()}`);
+  const response = await fetch(`${gasPipelines.endpoint}?${params.toString()}`, { cache: "no-store" });
   if (!response.ok) throw new Error("Could not load pipeline geometry.");
   const data = (await response.json()) as LineFeatureCollection;
-  return { type: "FeatureCollection", features: data.features ?? [] };
+  return { type: "FeatureCollection", features: data.features ?? [], properties: data.properties };
 }
 
 async function fetchHifldTransmissionLineStrings(center: LonLat): Promise<Array<Array<[number, number]>>> {
@@ -2518,7 +2519,9 @@ function SatelliteInfrastructureMap({
       : gasPipelineStatus === "error"
         ? "Unavailable"
         : hasActiveParcel
-          ? gasPipelineCount.toLocaleString()
+          ? gasPipelineStatus === "loaded" && gasPipelineCount === 0
+            ? "None found"
+            : gasPipelineCount.toLocaleString()
           : "Set load";
 
   const refreshElectricalDistances = (map: MapLibreMap | null, parcelCenter: LonLat) => {
@@ -2574,7 +2577,9 @@ function SatelliteInfrastructureMap({
         setGasPipelineStatus("loaded");
         setGasPipelineCount(totalMatchedFeatures);
         setGasPipelineMessage(
-          failedSources.length > 0 && displayedFeatures > 0
+          totalMatchedFeatures === 0
+            ? `No public gas or hazardous-liquid pipeline segments were returned within ${gasPipelines.dataRadiusMiles} miles of the active load location.`
+            : failedSources.length > 0 && displayedFeatures > 0
             ? `Loaded ${displayedFeatures.toLocaleString()} nearest pipeline segments (${totalMatchedFeatures.toLocaleString()} matched) within ${gasPipelines.dataRadiusMiles} miles; ${failedSources.length} public source did not respond.`
             : `Loaded ${displayedFeatures.toLocaleString()} nearest pipeline segments (${totalMatchedFeatures.toLocaleString()} matched) within ${gasPipelines.dataRadiusMiles} miles of the active load location.`,
         );
