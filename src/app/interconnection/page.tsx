@@ -2615,11 +2615,11 @@ function SatelliteInfrastructureMap({
     const canvas = mapRef.current?.getCanvas();
     if (canvas) canvas.style.cursor = isPlacingPin ? "crosshair" : "";
     setLocatorMessage((current) => {
-      if (isPlacingPin) return "Pin mode is on. Click anywhere on the map to set the active load coordinate.";
-      if (current === "Pin mode is on. Click anywhere on the map to set the active load coordinate.") {
+      if (isPlacingPin) return "Parcel placement is on. Click anywhere on the map to set the active parcel coordinate.";
+      if (current === "Parcel placement is on. Click anywhere on the map to set the active parcel coordinate.") {
         return hasActiveParcelRef.current
-          ? "Pin mode cancelled. The existing active load location is still in use."
-          : "No load location set. Enter coordinates, upload KML/KMZ, or place a pin on the map.";
+          ? "Parcel placement cancelled. The existing active parcel location is still in use."
+          : "No load location set. Enter coordinates, upload KML/KMZ, or place a parcel on the map.";
       }
       return current;
     });
@@ -3383,7 +3383,7 @@ function SatelliteInfrastructureMap({
             onClick={() => setIsPlacingPin((current) => !current)}
             type="button"
           >
-            {isPlacingPin ? "Cancel Pin" : "Place Pin"}
+            {isPlacingPin ? "Cancel Parcel" : "Place Parcel"}
           </button>
         </div>
         <label className="block">
@@ -3424,7 +3424,7 @@ function SatelliteInfrastructureMap({
               onChange={(event) => setIsPlacingPin(event.target.checked)}
               type="checkbox"
             />
-            <span className="font-semibold">Place Pin</span>
+            <span className="font-semibold">Place Parcel</span>
             <span className="text-white/70">{isPlacingPin ? "Click map" : "Off"}</span>
           </label>
           <label className="flex items-center gap-2">
