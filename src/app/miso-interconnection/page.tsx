@@ -1087,11 +1087,11 @@ export default function MisoInterconnectionPage() {
           <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#7b5d2a]">
-                Market Coverage
+                MISO + SPP Coverage
               </p>
-              <h1 className="text-2xl font-semibold text-[#172026]">MISO + SPP</h1>
+              <h1 className="text-2xl font-semibold text-[#172026]">GridMatch AI</h1>
               <p className="mt-1 text-sm text-[#66727a]">
-                Generation queue proximity and load matching across both markets.
+                AI-assisted generation, load, and grid infrastructure matching across ISO/RTO markets.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs lg:justify-end">

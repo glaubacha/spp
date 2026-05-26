@@ -1,14 +1,14 @@
-# SPP Interconnection Map
+# GridMatch AI
 
-Next.js app for viewing a parcel against decoded SPP generation interconnection queue projects.
+Next.js app for matching load sites and parcels against generation queues, grid infrastructure, existing plants, and nearby pipeline screening layers.
 
 ## What It Shows
 
-- Satellite basemap with OpenInfraMap power infrastructure overlays
-- Highlighted active parcel, including user-supplied coordinates or KML/KMZ uploads
-- SPP active queue project points decoded from the public PowerBI report
-- Queue-stage table and nearby active project summary
-- Optional heatmap of generation queue congestion weighted by project MW
+- Satellite basemap with power infrastructure, existing plants, and pipeline screening overlays
+- Highlighted active parcel/load point from coordinates, KML/KMZ uploads, or the Place Parcel map control
+- Active MISO and SPP queue projects with MW, queue status, COD, owner/entity, POI, and distance fields
+- Nearby queue project tables, queue-stage summaries, and source-backed network upgrade cost context
+- Natural-language map questions through the app's map question endpoint
 
 ## Local Development
 
@@ -27,4 +27,4 @@ This project can deploy directly to Vercel with the default Next.js build comman
 npm run build
 ```
 
-No database or scheduler environment variables are required for the interconnection map.
+No database or scheduler environment variables are required for GridMatch AI.

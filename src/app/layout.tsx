@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SPP Interconnection Map",
-  description: "Parcel-level view of nearby SPP generation interconnection queue projects",
+  title: "GridMatch AI",
+  description: "AI-assisted generation, load, and grid infrastructure matching across ISO/RTO markets.",
 };
 
 export default function RootLayout({
