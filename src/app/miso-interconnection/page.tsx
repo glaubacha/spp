@@ -50,6 +50,17 @@ type MisoQueueProject = {
   postGIAStatus: string;
   coordinates: MisoPoint | null;
   coordinateSource: string;
+  networkUpgradeCostUsd?: number | null;
+  networkUpgradeCostPerKw?: number | null;
+  poiCostPerKw?: number | null;
+  totalInterconnectionCostPerKw?: number | null;
+  networkUpgradeCostSource?: string | null;
+  networkUpgradeCostSourceUrl?: string | null;
+  networkUpgradeCostStudyDate?: string | null;
+  networkUpgradeCostStudyType?: string | null;
+  networkUpgradeCostPerMwRangeLabel?: string | null;
+  networkUpgradeCostLowUsd?: number | null;
+  networkUpgradeCostHighUsd?: number | null;
 };
 
 type MisoCountySummary = {
@@ -71,6 +82,7 @@ type MisoInterconnectionData = {
     powerBiReports: string[];
     countyGazetteer: string;
     positionNote: string;
+    misoNetworkUpgradeCosts?: string;
   };
   stats: {
     totalQueueProjects: number;
@@ -81,6 +93,10 @@ type MisoInterconnectionData = {
     activeFuelCounts: Record<string, number>;
     codYears: number[];
     studyCycles: string[];
+    networkUpgradeCostedProjects?: number;
+    activeNetworkUpgradeCostedProjects?: number;
+    networkUpgradeCostSourceMatchedProjects?: number;
+    activeNetworkUpgradeCostSourceMatchedProjects?: number;
   };
   countySummaries: MisoCountySummary[];
   projects: MisoQueueProject[];
@@ -190,7 +206,7 @@ const MISO_SOURCE: MisoInterconnectionData["source"] = {
   queueApi: "https://www.misoenergy.org/api/giqueue/getprojects",
   generatorInterconnection:
     "https://www.misoenergy.org/planning/resource-utilization/generator-interconnection/",
-  currentQueueMap: "https://cloud.cartovista.com/miso/ferc/current-queue-map",
+  currentQueueMap: "https://giqueue.misoenergy.org/PublicGiQueueMap/index.html",
   poiAnalysisMap: "https://cloud.cartovista.com/miso/ferc/poi-analysis-map",
   powerBiReports: [
     "https://app.powerbigov.us/view?r=eyJrIjoiYzlkYTBiYmMtMjFhYS00YTgyLTk5NTQtNzdlMjNhOTVjMzFjIiwidCI6IjYwNDA5MTViLTlkZmYtNGQ0Ny1iYjM1LThhYzljOWE1ZGMxOCJ9",
@@ -200,6 +216,7 @@ const MISO_SOURCE: MisoInterconnectionData["source"] = {
     "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_Gaz_counties_national.zip",
   positionNote:
     "MISO's public API provides queue rows but not raw map coordinates. The CartoVista current queue map exposes Latitude/Longitude columns in metadata, but direct feature extraction is protected. Mapped project locations here use public county centroids when the row includes county/state, with a small deterministic display offset to separate overlapping projects.",
+  misoNetworkUpgradeCosts: "https://www.interconnection.fyi/clusters/miso",
 };
 
 const EMPTY_STATS: MisoInterconnectionData["stats"] = {
@@ -258,6 +275,41 @@ function formatNumber(value: number | null | undefined, digits = 0) {
 function formatMw(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "Not listed";
   return `${formatNumber(value, value % 1 === 0 ? 0 : 1)} MW`;
+}
+
+function formatUsd(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "Not found";
+  return new Intl.NumberFormat("en-US", {
+    currency: "USD",
+    maximumFractionDigits: value >= 1_000_000 ? 1 : 0,
+    notation: value >= 1_000_000 ? "compact" : "standard",
+    style: "currency",
+  }).format(value);
+}
+
+function formatUsdPerKw(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "Not found";
+  return `${formatUsd(value)}/kW`;
+}
+
+function networkUpgradeCostLabel(project: MisoQueueProject) {
+  if (project.networkUpgradeCostUsd === null || project.networkUpgradeCostUsd === undefined) {
+    return "Not found in loaded public sources";
+  }
+  if (project.networkUpgradeCostLowUsd !== null && project.networkUpgradeCostLowUsd !== undefined && project.networkUpgradeCostHighUsd !== null && project.networkUpgradeCostHighUsd !== undefined) {
+    return `${formatUsd(project.networkUpgradeCostLowUsd)} - ${formatUsd(project.networkUpgradeCostHighUsd)}`;
+  }
+  return formatUsd(project.networkUpgradeCostUsd);
+}
+
+function networkUpgradeCostPerKwLabel(project: MisoQueueProject) {
+  if (project.networkUpgradeCostPerMwRangeLabel) {
+    return project.networkUpgradeCostPerMwRangeLabel.replaceAll("/ MW", "/MW");
+  }
+  if (project.networkUpgradeCostPerKw === null || project.networkUpgradeCostPerKw === undefined) {
+    return "Not found";
+  }
+  return formatUsdPerKw(project.networkUpgradeCostPerKw);
 }
 
 function formatDate(value: string | null | undefined) {
@@ -447,6 +499,8 @@ function popupHtml(project: ProjectWithDistance) {
       <div style="font-size: 13px; font-weight: 800; margin-bottom: 6px;">${escapeHtml(project.projectNumber)} ${escapeHtml(project.fuelType)}</div>
       <div style="display: grid; gap: 3px; font-size: 12px;">
         <div><strong>MW:</strong> ${escapeHtml(formatMw(project.mw))}</div>
+        <div><strong>Est. NU cost:</strong> ${escapeHtml(networkUpgradeCostLabel(project))}</div>
+        <div><strong>NU $/kW:</strong> ${escapeHtml(networkUpgradeCostPerKwLabel(project))}</div>
         <div><strong>Status:</strong> ${escapeHtml(project.status)}</div>
         <div><strong>COD target:</strong> ${escapeHtml(formatDate(project.targetCod))}</div>
         <div><strong>Queue date:</strong> ${escapeHtml(formatDate(project.queueDate))}</div>
@@ -456,6 +510,7 @@ function popupHtml(project: ProjectWithDistance) {
         <div><strong>Study:</strong> ${escapeHtml([project.studyCycle, project.studyGroup, project.studyPhase].filter(Boolean).join(" / ") || "Not listed")}</div>
         <div><strong>County/state:</strong> ${escapeHtml([project.county, project.state].filter(Boolean).join(", ") || "Not listed")}</div>
         <div><strong>Straight-line distance:</strong> ${escapeHtml(formatDistance(project.distanceMi))}</div>
+        <div><strong>NU source:</strong> ${escapeHtml(project.networkUpgradeCostSource || "Not found in loaded public sources")}</div>
         <div style="color:#475569; line-height:1.25; margin-top:4px;"><strong>Map position:</strong> ${escapeHtml(project.coordinateSource)}</div>
       </div>
     </div>
@@ -1057,7 +1112,12 @@ export default function MisoInterconnectionPage() {
     {
       label: "Mapped Active",
       value: loadError ? "Error" : data ? formatNumber(stats.mappedActiveProjects) : "Loading",
-      detail: loadError || "county or state-derived map positions",
+      detail: loadError || "exact MISO map points plus marked fallbacks",
+    },
+    {
+      label: "MISO NU Costs",
+      value: loadError ? "Error" : data ? `${formatNumber(stats.activeNetworkUpgradeCostedProjects ?? 0)}/${formatNumber(stats.activeProjects)}` : "Loading",
+      detail: loadError || "active rows costed from loaded public sources",
     },
     {
       label: "Nearest Active",
@@ -1289,6 +1349,8 @@ export default function MisoInterconnectionPage() {
               <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4 xl:grid-cols-5">
                 <MisoInfo label="Distance" value={parcel ? `${formatNumber(selectedForPanel.distanceMi, 1)} mi straight-line` : "Set load"} />
                 <MisoInfo label="Capacity" value={formatMw(selectedForPanel.mw)} />
+                <MisoInfo label="Est. NU cost" value={networkUpgradeCostLabel(selectedForPanel)} />
+                <MisoInfo label="NU $/kW" value={networkUpgradeCostPerKwLabel(selectedForPanel)} />
                 <MisoInfo label="Status" value={selectedForPanel.status} />
                 <MisoInfo label="Queue date" value={formatDate(selectedForPanel.queueDate)} />
                 <MisoInfo label="Target COD" value={formatDate(selectedForPanel.targetCod)} />
@@ -1296,6 +1358,7 @@ export default function MisoInterconnectionPage() {
                 <MisoInfo label="Withdrawn date" value={formatDate(selectedForPanel.withdrawnDate)} />
                 <MisoInfo label="TO" value={selectedForPanel.transmissionOwner || "Not listed"} />
                 <MisoInfo label="Type" value={selectedForPanel.fuelType} />
+                <MisoInfo label="NU source" value={selectedForPanel.networkUpgradeCostSource || "Not found in loaded public sources"} />
                 <MisoInfo label="Study" value={[selectedForPanel.studyCycle, selectedForPanel.studyGroup, selectedForPanel.studyPhase].filter(Boolean).join(" / ") || "Not listed"} />
               </div>
               <div className="rounded-md bg-[#f6f1e8] p-3 text-xs leading-5 text-[#5b6268]">
@@ -1340,7 +1403,7 @@ export default function MisoInterconnectionPage() {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1320px] text-left text-sm">
               <thead className="bg-[#f7f2e9] text-xs uppercase tracking-[0.08em] text-[#5b6268]">
                 <tr>
                   <th className="px-2 py-2">
@@ -1372,6 +1435,8 @@ export default function MisoInterconnectionPage() {
                   </th>
                   <th className="px-2 py-2">POI</th>
                   <th className="px-2 py-2">Transmission owner</th>
+                  <th className="px-2 py-2">Est. NU cost</th>
+                  <th className="px-2 py-2">NU $/kW</th>
                   <th className="px-2 py-2">Study</th>
                   <th className="px-2 py-2">Queue date</th>
                   <th className="px-2 py-2">Withdrawn</th>
@@ -1403,6 +1468,8 @@ export default function MisoInterconnectionPage() {
                   <th />
                   <th />
                   <th />
+                  <th />
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -1430,6 +1497,8 @@ export default function MisoInterconnectionPage() {
                     <td className="px-2 py-2">{formatDate(project.targetCod)}</td>
                     <td className="px-2 py-2">{project.poiName || "Not listed"}</td>
                     <td className="px-2 py-2">{project.transmissionOwner || "Not listed"}</td>
+                    <td className="px-2 py-2">{networkUpgradeCostLabel(project)}</td>
+                    <td className="px-2 py-2">{networkUpgradeCostPerKwLabel(project)}</td>
                     <td className="px-2 py-2">
                       {[project.studyCycle, project.studyGroup, project.studyPhase]
                         .filter(Boolean)
@@ -1461,14 +1530,22 @@ function MetricCard({ detail, label, value }: { detail: string; label: string; v
 function MisoClusterNetworkUpgradeCosts({
   summaries,
 }: {
-  summaries: Array<{ activeMw: number; mappedCount: number; projectCount: number; stage: string }>;
+  summaries: Array<{
+    activeMw: number;
+    allocatedCostUsd: number;
+    costedCount: number;
+    mappedCount: number;
+    medianCostPerKw: number | null;
+    projectCount: number;
+    stage: string;
+  }>;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-[#d7d1c5] bg-white shadow-sm">
       <div className="border-b border-[#e5ded2] p-4">
         <h2 className="text-lg font-semibold">Estimated Network Upgrade Costs by Queue Cluster</h2>
         <p className="mt-1 text-xs leading-5 text-[#66727a]">
-          MISO queue clusters are grouped with the same layout as SPP; source-backed upgrade-cost workbooks have not been loaded for these MISO rows yet.
+          MISO rows use Interconnection.fyi public cluster cost ranges plus Berkeley Lab historical project-level study costs where they match the queue ID.
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -1489,16 +1566,16 @@ function MisoClusterNetworkUpgradeCosts({
               summaries.map((summary) => (
                 <tr className="border-t border-[#eee8de]" key={summary.stage}>
                   <td className="px-3 py-3 font-semibold text-[#172026]">{summary.stage}</td>
-                  <td className="px-3 py-3">Not loaded</td>
+                  <td className="px-3 py-3">{summary.costedCount ? formatUsd(summary.allocatedCostUsd) : "Not found"}</td>
                   <td className="px-3 py-3">{formatNumber(summary.activeMw, 1)} MW</td>
-                  <td className="px-3 py-3">Not loaded</td>
-                  <td className="px-3 py-3">Not loaded</td>
+                  <td className="px-3 py-3">{summary.medianCostPerKw === null ? "Not found" : formatUsdPerKw(summary.medianCostPerKw)}</td>
+                  <td className="px-3 py-3">{summary.costedCount ? formatUsd(summary.allocatedCostUsd) : "Not found"}</td>
                   <td className="px-3 py-3 text-[#4b565e]">
-                    {summary.mappedCount}/{summary.projectCount} mapped
+                    {summary.costedCount}/{summary.projectCount} costed; {summary.mappedCount}/{summary.projectCount} mapped
                   </td>
                   <td className="max-w-[280px] px-3 py-3 text-[#4b565e]">
-                    <a className="text-[#246b8f] underline-offset-2 hover:underline" href={MISO_SOURCE.generatorInterconnection} rel="noreferrer" target="_blank">
-                      MISO queue data
+                    <a className="text-[#246b8f] underline-offset-2 hover:underline" href={MISO_SOURCE.misoNetworkUpgradeCosts || "https://energyanalysis.lbl.gov/publications/generator-interconnection-cost"} rel="noreferrer" target="_blank">
+                      MISO cost sources
                     </a>
                   </td>
                 </tr>
@@ -1535,23 +1612,65 @@ function breakdownMisoMwByType(projects: readonly ProjectWithDistance[]): Breakd
 }
 
 function summarizeMisoClusters(projects: readonly ProjectWithDistance[]) {
-  const summaries = new Map<string, { activeMw: number; mappedCount: number; projectCount: number; stage: string }>();
+  const summaries = new Map<
+    string,
+    {
+      activeMw: number;
+      allocatedCostUsd: number;
+      costedCount: number;
+      costPerKwValues: number[];
+      mappedCount: number;
+      projectCount: number;
+      stage: string;
+    }
+  >();
 
   for (const project of projects) {
     const stage = project.studyCycle || project.studyGroup || project.studyPhase || "Not listed";
     const current = summaries.get(stage) ?? {
       activeMw: 0,
+      allocatedCostUsd: 0,
+      costedCount: 0,
+      costPerKwValues: [],
       mappedCount: 0,
       projectCount: 0,
       stage,
     };
     current.activeMw += project.mw || 0;
+    if (project.networkUpgradeCostUsd !== null && project.networkUpgradeCostUsd !== undefined) {
+      current.allocatedCostUsd += project.networkUpgradeCostUsd;
+      current.costedCount += 1;
+    }
+    if (project.networkUpgradeCostPerKw !== null && project.networkUpgradeCostPerKw !== undefined) {
+      current.costPerKwValues.push(project.networkUpgradeCostPerKw);
+    }
     current.mappedCount += project.coordinates ? 1 : 0;
     current.projectCount += 1;
     summaries.set(stage, current);
   }
 
-  return Array.from(summaries.values()).sort((a, b) => b.activeMw - a.activeMw).slice(0, 10);
+  return Array.from(summaries.values())
+    .map((summary) => {
+      const values = [...summary.costPerKwValues].sort((a, b) => a - b);
+      const middle = Math.floor(values.length / 2);
+      const medianCostPerKw =
+        values.length === 0
+          ? null
+          : values.length % 2
+            ? values[middle]
+            : (values[middle - 1] + values[middle]) / 2;
+      return {
+        activeMw: summary.activeMw,
+        allocatedCostUsd: summary.allocatedCostUsd,
+        costedCount: summary.costedCount,
+        mappedCount: summary.mappedCount,
+        medianCostPerKw,
+        projectCount: summary.projectCount,
+        stage: summary.stage,
+      };
+    })
+    .sort((a, b) => b.activeMw - a.activeMw)
+    .slice(0, 10);
 }
 
 function Breakdown({ items, suffix = "", title }: { items: readonly BreakdownItem[]; suffix?: string; title: string }) {
